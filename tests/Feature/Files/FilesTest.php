@@ -94,6 +94,44 @@ test('malware scanning rejects and deletes an infected upload before creating a 
         ->and(Storage::disk('files')->allFiles())->toBe([]);
 });
 
+test('malware scanner failures honor fail-open mode', function () {
+    config()->set('malware.enabled', true);
+    config()->set('malware.fail_closed', false);
+    app()->instance(MalwareScanner::class, new class implements MalwareScanner
+    {
+        public function scan($stream): void
+        {
+            throw new RuntimeException('scanner unavailable');
+        }
+    });
+
+    $this->actingAs($this->admin)->post('/files', [
+        'file' => UploadedFile::fake()->create('available.pdf', 12, 'application/pdf'),
+    ])->assertRedirect();
+
+    expect(File::query()->count())->toBe(1);
+    Storage::disk('files')->assertExists(File::query()->firstOrFail()->path);
+});
+
+test('malware scanner failures delete uploads in fail-closed mode', function () {
+    config()->set('malware.enabled', true);
+    config()->set('malware.fail_closed', true);
+    app()->instance(MalwareScanner::class, new class implements MalwareScanner
+    {
+        public function scan($stream): void
+        {
+            throw new RuntimeException('scanner unavailable');
+        }
+    });
+
+    $this->actingAs($this->admin)->post('/files', [
+        'file' => UploadedFile::fake()->create('unavailable.pdf', 12, 'application/pdf'),
+    ])->assertServerError();
+
+    expect(File::query()->count())->toBe(0)
+        ->and(Storage::disk('files')->allFiles())->toBe([]);
+});
+
 test('downloads answer with X-Accel-Redirect and never the bytes', function () {
     $file = uploadDocumentFile($this->admin);
 

@@ -19,7 +19,28 @@ mkdir -p "$destination"
 test ! -e "$work"
 test ! -e "$final"
 mkdir "$work"
-trap 'rm -rf "$work"' EXIT INT TERM
+
+# The database and uploaded files form one logical dataset. Stop the app's
+# web, queue and scheduler processes so neither side can change between the
+# SQL dump and storage archive. The trap restores service on every exit path.
+if ! docker compose ps --status running --services | grep -qx app; then
+    echo "The app service must be running before a backup." >&2
+    exit 1
+fi
+
+app_stopped=false
+cleanup() {
+    status=$?
+    rm -rf "$work"
+    if [ "$app_stopped" = true ]; then
+        docker compose start app >/dev/null || true
+    fi
+    exit "$status"
+}
+trap cleanup EXIT INT TERM
+
+docker compose stop app
+app_stopped=true
 
 docker compose exec -T db sh -c \
     'exec mysqldump --single-transaction --quick --routines --triggers -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
@@ -27,7 +48,8 @@ docker compose exec -T db sh -c \
 
 # storage contains protected local uploads and, in the official image, the
 # persistent .env/APP_KEY needed to decrypt stored secrets.
-docker compose exec -T app tar -C /var/www/html -czf - storage \
+docker compose run --rm --no-deps --entrypoint tar app \
+    -C /var/www/html -czf - storage \
     > "$work/storage.tar.gz"
 
 test -s "$work/database.sql"
@@ -37,6 +59,8 @@ test -s "$work/storage.tar.gz"
 printf '%s\n' "$timestamp" > "$work/CREATED_AT_UTC"
 
 mv "$work" "$final"
+docker compose start app >/dev/null
+app_stopped=false
 trap - EXIT INT TERM
 
 echo "Backup completed: $final"

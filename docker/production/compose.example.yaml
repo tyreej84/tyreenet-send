@@ -9,10 +9,20 @@
 
 name: tyreenet-send
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   app:
-    image: ghcr.io/tyreej84/tyreenet-send:latest
+    # Pin this to the sha-* tag produced for the release you tested. Do not
+    # deploy mutable `latest` in production.
+    image: ghcr.io/tyreej84/tyreenet-send:${TYREENET_SEND_TAG:?Set TYREENET_SEND_TAG to a tested sha-* image tag}
     restart: unless-stopped
+    stop_grace_period: 65m
+    logging: *default-logging
     ports:
       # Main-server nginx terminates TLS and proxies send.tyreenet.com over
       # the internal network to this host. The host firewall must restrict
@@ -23,6 +33,9 @@ services:
       APP_URL: https://send.tyreenet.com
       APP_ENV: production
       APP_DEBUG: "false"
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: info
+      SESSION_SECURE_COOKIE: "true"
 
       # Generated on first boot and kept on the storage volume. Set it
       # explicitly if you manage secrets elsewhere — but never change it on
@@ -66,7 +79,7 @@ services:
       MALWARE_SCAN_FAIL_CLOSED: "true"
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
-      CLAMAV_TIMEOUT: "60"
+      CLAMAV_TIMEOUT: "300"
 
       # Optional: uncomment these — with a password of your own — to create
       # the first administrator unattended and skip the setup screen. Left
@@ -82,12 +95,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       clamav:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   db:
     image: mysql:8.4
     restart: unless-stopped
+    logging: *default-logging
     environment:
       MYSQL_DATABASE: projectsend
       MYSQL_USER: projectsend
@@ -106,14 +128,27 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   clamav:
     image: clamav/clamav:stable
     restart: unless-stopped
+    logging: *default-logging
     volumes:
       - clamav-data:/var/lib/clamav
+    environment:
+      # TyreeNet Send officially accepts/scans files up to 1 GiB. Keep the
+      # application's System -> Settings -> Uploads limit at or below 1024 MB.
+      CLAMD_CONF_StreamMaxLength: 1G
+      CLAMD_CONF_MaxFileSize: 1G
+      CLAMD_CONF_MaxScanSize: 1G
     healthcheck:
       test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
       interval: 15s

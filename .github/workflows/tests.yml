@@ -118,6 +118,14 @@ jobs:
       - name: Build Assets
         run: npm run build
 
+      - name: Lint Frontend
+        run: npx eslint .
+
+      - name: Audit Dependencies
+        run: |
+          composer audit --locked --no-interaction
+          npm audit --omit=dev
+
       - name: Copy Environment File
         run: cp .env.example .env
 

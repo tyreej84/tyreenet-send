@@ -1,9 +1,10 @@
 name: Publish TyreeNet Send image
 
 on:
-  push:
+  workflow_run:
+    workflows: [tests]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,11 +16,19 @@ concurrency:
 
 jobs:
   publish:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Resolve release revision
+        id: release
+        shell: bash
+        run: echo "short_sha=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
@@ -70,15 +79,16 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/tyreenet-send
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=latest
+            type=raw,value=sha-${{ steps.release.outputs.short_sha }}
           labels: |
             org.opencontainers.image.title=TyreeNet Send
             org.opencontainers.image.description=TyreeNet's customized ProjectSend file-delivery service
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/docs/TYREENET_PRODUCTION.md
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ github.event.workflow_run.head_sha }}/docs/TYREENET_PRODUCTION.md
             org.opencontainers.image.licenses=GPL-2.0-or-later
             org.opencontainers.image.vendor=TyreeNet
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
             org.opencontainers.image.base.name=docker.io/projectsend/projectsend:2
 
       - name: Build and publish image
@@ -87,6 +97,7 @@ jobs:
           context: image-context
           file: image-context/docker/production/Dockerfile
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

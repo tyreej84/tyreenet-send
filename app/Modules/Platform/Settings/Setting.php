@@ -441,7 +441,7 @@ enum Setting: string
 
             self::ClientsAutoGroup => 0,
             self::ClientsMembershipDenyCooldownDays => 30,
-            self::MaxFileSizeMb => 2048,
+            self::MaxFileSizeMb => 1024,
             self::DefaultClientStorageQuotaMb => 0,
             self::AccountErasureGraceDays => 30,
             self::AccountErasureReassignTo => 0,

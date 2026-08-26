@@ -57,7 +57,7 @@ test('a session within the size limit is created; over the limit is refused', fu
 
     $this->postJson('/uploads', [
         'filename' => 'huge.zip',
-        'size' => 3 * 1024 * 1024 * 1024, // 3 GB > 2048 MB default
+        'size' => 3 * 1024 * 1024 * 1024, // 3 GB > 1024 MB default
         'type' => 'application/octet-stream',
     ])->assertStatus(422);
 

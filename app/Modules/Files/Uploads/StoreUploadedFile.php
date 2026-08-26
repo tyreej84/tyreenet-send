@@ -56,9 +56,13 @@ class StoreUploadedFile
             } catch (Throwable $exception) {
                 if ((bool) config('malware.fail_closed')) {
                     Storage::disk($disk)->delete($path);
+
+                    throw $exception;
                 }
 
-                throw $exception;
+                // Fail-open is an explicit operator choice: retain the file,
+                // record the scanner failure, and continue storing metadata.
+                report($exception);
             } finally {
                 fclose($stream);
             }
