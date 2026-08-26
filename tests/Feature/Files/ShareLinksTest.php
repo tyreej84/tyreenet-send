@@ -10,6 +10,7 @@ use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\ShareLink;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Models\RolePermission;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
@@ -163,6 +164,35 @@ test('the public show and download routes work with no authenticated user at all
     expect($link->refresh()->downloads_count)->toBe(1)
         ->and($entry->actor_id)->toBeNull()
         ->and($entry->actor_name)->toBeNull();
+});
+
+test('a password-protected share link cannot be viewed or downloaded until it is unlocked', function () {
+    $file = shareTestFile($this->admin);
+
+    $this->actingAs($this->admin)->post("/files/{$file->id}/share-links", [
+        'password' => 'blue-knot-2026',
+    ])->assertRedirect();
+
+    auth()->logout();
+    $link = ShareLink::query()->sole();
+
+    expect($link->password_hash)->not->toBe('blue-knot-2026')
+        ->and(Hash::check('blue-knot-2026', (string) $link->password_hash))->toBeTrue();
+
+    $this->get("/s/{$link->token}")->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('status', 'password_required')
+        ->has('unlock_url'));
+    $this->get("/s/{$link->token}/download")->assertRedirect(route('share.show', $link->token));
+    expect($link->refresh()->downloads_count)->toBe(0);
+
+    $this->post("/s/{$link->token}/unlock", ['password' => 'wrong-password'])
+        ->assertSessionHasErrors('password');
+    $this->post("/s/{$link->token}/unlock", ['password' => 'blue-knot-2026'])
+        ->assertRedirect(route('share.show', $link->token));
+
+    $this->get("/s/{$link->token}")->assertInertia(fn (AssertableInertia $page) => $page->where('status', 'active'));
+    $this->get("/s/{$link->token}/download")->assertOk();
+    expect($link->refresh()->downloads_count)->toBe(1);
 });
 
 test('a share link to an externally stored file hands out a presigned url, not an nginx path', function () {

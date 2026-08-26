@@ -1,4 +1,5 @@
 import AppLogoIcon from '@/components/app-logo-icon';
+import { AppearanceSwitcher } from '@/components/appearance-switcher';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { PoweredBy } from '@/components/powered-by';
 import { type SharedData } from '@/types';
@@ -42,7 +43,10 @@ export default function PublicLayout({ children, title, description }: PublicLay
                 {children}
 
                 <div className="flex flex-col items-center gap-3">
-                    <LocaleSwitcher />
+                    <div className="flex items-center gap-1">
+                        <LocaleSwitcher />
+                        <AppearanceSwitcher />
+                    </div>
                     <PoweredBy className="text-muted-foreground/60 hover:text-muted-foreground text-xs transition-colors" />
                 </div>
             </div>

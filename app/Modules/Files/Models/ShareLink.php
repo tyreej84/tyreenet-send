@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  *
  * @property int $id
  * @property string $token
+ * @property string|null $password_hash
  * @property int|null $created_by
  * @property Carbon|null $expires_at
  * @property int|null $max_downloads
@@ -53,5 +54,10 @@ class ShareLink extends Model
     public function isActive(): bool
     {
         return ! $this->isExpired() && ! $this->hasReachedLimit();
+    }
+
+    public function isPasswordProtected(): bool
+    {
+        return $this->password_hash !== null;
     }
 }

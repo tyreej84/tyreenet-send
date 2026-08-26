@@ -5,7 +5,6 @@ import { Archive, File as FileIcon, Folder as FolderIcon, Globe, Upload } from '
 import { CommentsShellDefault } from '@/components/comments/shells/comments-shell-default';
 import { DownloadAction } from '@/components/download-action';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
-import { PreviewAction } from '@/components/preview-action';
 import { CategoryBadges } from '@/components/files/category-badges';
 import { VersionBadge } from '@/components/files/version-badge';
 import Heading from '@/components/heading';
@@ -16,6 +15,7 @@ import { PortalBreadcrumb } from '@/components/portal/portal-breadcrumb';
 import { PortalFilesToolbar } from '@/components/portal/portal-files-toolbar';
 import { RenameFolderDialog } from '@/components/portal/rename-folder-dialog';
 import { SelectionBar } from '@/components/portal/selection-bar';
+import { PreviewAction } from '@/components/preview-action';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ViewModeToggle } from '@/components/view-mode-toggle';
@@ -85,15 +85,15 @@ export default function MyFiles(props: MyFilesFolderManagementProps) {
         folderUrl,
     } = usePortalFiles(props);
 
-    const breadcrumbs: BreadcrumbItem[] = [{ title: t('My files'), href: '/my-files' }];
+    const breadcrumbs: BreadcrumbItem[] = [{ title: t('Files shared with me'), href: '/my-files' }];
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={t('My files')} />
+            <Head title={t('Files shared with me')} />
 
             <div className="px-4 py-6">
                 <div className="flex items-start justify-between">
-                    <Heading title={folder?.name ?? t('My files')} description={t('The files shared with you')} />
+                    <Heading title={folder?.name ?? t('Files shared with me')} description={t('Private file delivery from TyreeNet')} />
                     <div className="flex items-center gap-2">
                         <NewFolderButton
                             open={newFolderOpen}

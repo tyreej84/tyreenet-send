@@ -8,6 +8,9 @@ use App\Models\User;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLogger;
 use App\Modules\Files\Models\File;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
  * The single place a stored payload becomes a File record — shared by
@@ -18,6 +21,7 @@ class StoreUploadedFile
 {
     public function __construct(
         private readonly ActivityLogger $activity,
+        private readonly MalwareScanner $malware,
     ) {}
 
     public function create(
@@ -34,6 +38,31 @@ class StoreUploadedFile
         Action $action = Action::FileUploaded,
     ): File {
         $originalName = self::sanitizeFilename($originalName);
+
+        if ((bool) config('malware.enabled')) {
+            $stream = Storage::disk($disk)->readStream($path);
+            if (! is_resource($stream)) {
+                throw new \RuntimeException('The stored upload could not be opened for malware scanning.');
+            }
+
+            try {
+                $this->malware->scan($stream);
+            } catch (MalwareDetected) {
+                Storage::disk($disk)->delete($path);
+
+                throw ValidationException::withMessages([
+                    'file' => __('The upload was rejected because malware was detected.'),
+                ]);
+            } catch (Throwable $exception) {
+                if ((bool) config('malware.fail_closed')) {
+                    Storage::disk($disk)->delete($path);
+                }
+
+                throw $exception;
+            } finally {
+                fclose($stream);
+            }
+        }
 
         $file = File::query()->create([
             'uploaded_by' => $uploader->id,

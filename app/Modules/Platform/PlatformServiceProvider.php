@@ -158,7 +158,7 @@ class PlatformServiceProvider extends ServiceProvider
         // community-exclusive; they're free-for-everyone, so they belong
         // here instead, not gated behind either package.
         $publicThemes = $this->app->make(PublicThemeRegistry::class);
-        $publicThemes->register('default', 'Default', __('A clean, neutral layout that works well for any kind of file sharing.'));
+        $publicThemes->register('default', 'TyreeNet', __('A crafted, recipient-first layout with Celtic details and TyreeNet colors.'));
         $publicThemes->register('compact', 'Compact', __('A dense, spreadsheet-style list that fits more files on screen — best for large collections and frequent uploaders.'));
         $publicThemes->register('drive', 'Drive', __('A spacious, colorful layout inspired by cloud storage apps, with clear file-type icons and generous spacing.'));
         $publicThemes->register('gallery', 'Gallery', __('A full-width photo grid built for visual browsing — the best choice for photographers and image-heavy collections.'));

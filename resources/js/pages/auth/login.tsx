@@ -48,7 +48,7 @@ export default function Login({ status, canResetPassword, canRegister }: LoginPr
     const submit: FormEventHandler = async (e) => {
         e.preventDefault();
 
-        captchaToken.current = await captcha.current?.execute() ?? null;
+        captchaToken.current = (await captcha.current?.execute()) ?? null;
 
         post(route('login'), {
             onFinish: () => reset('password'),
@@ -59,7 +59,7 @@ export default function Login({ status, canResetPassword, canRegister }: LoginPr
     };
 
     return (
-        <AuthLayout title={t('Log in to your account')} description={t('Enter your email and password below to log in')}>
+        <AuthLayout title={t('Secure files, shared personally.')} description={t('Sign in to access files shared with you through TyreeNet.')}>
             <Head title={t('Log in')} />
 
             {/* The app-wide Toaster lives in the authenticated layout, so a

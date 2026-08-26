@@ -42,7 +42,9 @@ class DashboardWidgetPreferences
             ->where('widget_key', $widgetKey)
             ->first();
 
-        return $row->enabled ?? true;
+        // TyreeNet keeps the working dashboard focused on delivery. Product
+        // news remains available in the widget picker but starts hidden.
+        return $row->enabled ?? $widgetKey !== 'news';
     }
 
     public function columnsFor(User $user): int

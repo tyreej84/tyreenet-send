@@ -14,7 +14,7 @@ use Inertia\Response;
 /**
  * The screen a brand-new installation opens on: thank you, then the short
  * list of things worth doing first, then — at the very bottom, once there
- * is nothing left to do here — the invitation to the Discord.
+ * is nothing left to do here.
  *
  * That order is the point. Somebody who has just installed this has a job
  * in mind, and the fastest way to lose them is to open with a social

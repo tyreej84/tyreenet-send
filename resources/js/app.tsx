@@ -29,7 +29,7 @@ axios.defaults.xsrfCookieName = xsrfCookieName();
  * no setting can move it afterwards. That is how 2.0.0 came to tell every
  * visitor its tabs were "Laravel".
  */
-let appName = 'ProjectSend';
+let appName = 'TyreeNet Send';
 
 const siteName = (page: { props: Record<string, unknown> }): string | null => {
     const name = page.props.name;

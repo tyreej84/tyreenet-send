@@ -13,8 +13,8 @@ import {
     useSensors,
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { Head, router, usePage } from '@inertiajs/react';
-import { GripVertical, LayoutGrid } from 'lucide-react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { GripVertical, LayoutGrid, Share2 } from 'lucide-react';
 import { Fragment, ReactNode, useMemo, useState } from 'react';
 
 import { ApiWidget, type ApiUsageSummary } from '@/components/dashboard-widgets/api-widget';
@@ -110,7 +110,8 @@ export default function Dashboard({
     dashboard_columns,
 }: DashboardProps) {
     const { t } = useTranslation();
-    const { update_notice } = usePage<SharedData>().props;
+    const { update_notice, auth } = usePage<SharedData>().props;
+    const canShareFiles = auth.permissions.includes('upload');
     const [releaseDialogOpen, setReleaseDialogOpen] = useState(false);
     const [widgetsDialogOpen, setWidgetsDialogOpen] = useState(false);
     const [layout, setLayout] = useState<WidgetLayout>(widget_layout);
@@ -333,11 +334,21 @@ export default function Dashboard({
 
             <div className="space-y-6 px-4 py-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <Heading title={t('Dashboard')} description={t('An overview of this installation')} />
-                    <Button variant="outline" size="sm" onClick={() => setWidgetsDialogOpen(true)}>
-                        <LayoutGrid className="size-4" />
-                        {t('Widgets')}
-                    </Button>
+                    <Heading title={t('TyreeNet Send')} description={t('Share privately, see what was downloaded, and keep an eye on storage.')} />
+                    <div className="flex items-center gap-2">
+                        {canShareFiles && (
+                            <Button size="sm" asChild>
+                                <Link href={route('files.create')}>
+                                    <Share2 className="size-4" />
+                                    {t('Share files')}
+                                </Link>
+                            </Button>
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => setWidgetsDialogOpen(true)}>
+                            <LayoutGrid className="size-4" />
+                            {t('Widgets')}
+                        </Button>
+                    </div>
                 </div>
 
                 <DndContext

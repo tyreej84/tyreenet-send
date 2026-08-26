@@ -49,7 +49,7 @@ export default function ClientsIndex({ clients, pagination, filters, reassign_ca
         { search: '', status: ALL },
     );
 
-    const breadcrumbs: BreadcrumbItem[] = [{ title: t('Clients'), href: '/clients' }];
+    const breadcrumbs: BreadcrumbItem[] = [{ title: t('Recipients'), href: '/clients' }];
 
     const statusBadge = (client: ClientRow) => {
         if (client.account_requested) {
@@ -61,11 +61,11 @@ export default function ClientsIndex({ clients, pagination, filters, reassign_ca
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={t('Clients')} />
+            <Head title={t('Recipients')} />
 
             <div className="px-4 py-6">
                 <div className="flex items-start justify-between">
-                    <Heading title={t('Clients')} description={t('The people you share files with')} />
+                    <Heading title={t('Recipients')} description={t('The people you choose to share files with')} />
                     <div className="flex gap-2">
                         {can('manage_custom_fields') && (
                             <Button variant="outline" asChild>
@@ -74,7 +74,7 @@ export default function ClientsIndex({ clients, pagination, filters, reassign_ca
                         )}
                         {can('create_clients') && (
                             <Button asChild>
-                                <Link href={route('clients.create')}>{t('New client')}</Link>
+                                <Link href={route('clients.create')}>{t('New recipient')}</Link>
                             </Button>
                         )}
                     </div>

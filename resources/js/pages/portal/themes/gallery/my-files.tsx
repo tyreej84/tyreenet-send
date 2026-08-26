@@ -4,7 +4,6 @@ import { Archive, File as FileIcon, Folder as FolderIcon, Globe, Upload } from '
 import { CommentsShellGallery } from '@/components/comments/shells/comments-shell-gallery';
 import { DownloadAction } from '@/components/download-action';
 import { FilePreviewDialog } from '@/components/file-preview-dialog';
-import { PreviewAction } from '@/components/preview-action';
 import { CategoryBadges } from '@/components/files/category-badges';
 import { VersionBadge } from '@/components/files/version-badge';
 import Heading from '@/components/heading';
@@ -15,6 +14,7 @@ import { PortalBreadcrumb } from '@/components/portal/portal-breadcrumb';
 import { PortalFilesToolbarGallery } from '@/components/portal/portal-files-toolbar-gallery';
 import { RenameFolderDialog } from '@/components/portal/rename-folder-dialog';
 import { SelectionBar } from '@/components/portal/selection-bar';
+import { PreviewAction } from '@/components/preview-action';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ZipDownloadDialog } from '@/components/zip-download-dialog';
@@ -82,7 +82,7 @@ export default function MyFilesGallery(props: MyFilesFolderManagementProps) {
 
     return (
         <PortalLayoutGallery>
-            <Head title={t('My files')} />
+            <Head title={t('Files shared with me')} />
 
             <div>
                 <div className="flex items-start justify-between">

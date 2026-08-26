@@ -57,7 +57,7 @@ export function AppSidebar() {
 
     if (auth.user.type === 'client') {
         groups[0].items.push({
-            title: t('My files'),
+            title: t('Files shared with me'),
             url: '/my-files',
             icon: FileText,
         });
@@ -107,7 +107,7 @@ export function AppSidebar() {
 
     if (can('manage_clients')) {
         clientItems.push({
-            title: t('Clients'),
+            title: t('Recipients'),
             url: '/clients',
             icon: Contact,
         });
@@ -149,7 +149,7 @@ export function AppSidebar() {
 
     if (clientItems.length > 0) {
         groups.push({
-            title: t('Clients'),
+            title: t('Recipients'),
             items: clientItems,
         });
     }
@@ -291,10 +291,7 @@ export function AppSidebar() {
                     collapses to icons. */}
                 <div className="px-2 pb-1 text-center group-data-[collapsible=icon]:hidden">
                     {isStaff ? (
-                        <Link
-                            href="/system/about"
-                            className="text-sidebar-foreground/50 hover:text-sidebar-foreground/80 text-xs transition-colors"
-                        >
+                        <Link href="/system/about" className="text-sidebar-foreground/50 hover:text-sidebar-foreground/80 text-xs transition-colors">
                             ProjectSend {version}
                         </Link>
                     ) : (

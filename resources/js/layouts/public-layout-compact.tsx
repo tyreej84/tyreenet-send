@@ -1,4 +1,5 @@
 import AppLogoIcon from '@/components/app-logo-icon';
+import { AppearanceSwitcher } from '@/components/appearance-switcher';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { PoweredBy } from '@/components/powered-by';
 import { type SharedData } from '@/types';
@@ -30,7 +31,10 @@ export default function PublicLayoutCompact({ children, title, description }: Pu
                     )}
                     <span className="text-foreground text-sm font-semibold">{name}</span>
                 </Link>
-                <LocaleSwitcher />
+                <div className="flex items-center gap-1">
+                    <LocaleSwitcher />
+                    <AppearanceSwitcher />
+                </div>
             </header>
 
             <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 md:px-8">

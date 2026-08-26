@@ -3,6 +3,10 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="description" content="Private, secure file delivery from TyreeNet.">
+        <meta name="theme-color" content="#4169e1">
+        <meta property="og:site_name" content="TyreeNet Send">
+        <meta property="og:type" content="website">
         @if($page['props']['noindex'] ?? false)
             <meta name="robots" content="noindex">
         @endif
@@ -31,7 +35,7 @@
 
         <link rel="icon" href="/favicon.ico" sizes="48x48">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        <link rel="apple-touch-icon" href="/favicon.svg">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />

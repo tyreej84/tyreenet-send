@@ -94,21 +94,21 @@
     --card-foreground: hsl(0, 0%, 3.9%);
     --popover: hsl(0, 0%, 100%);
     --popover-foreground: hsl(0, 0%, 3.9%);
-    --primary: #4c2ab6; /* ProjectSend brand */
+    --primary: #4169e1; /* TyreeNet royal blue */
     --primary-foreground: hsl(0, 0%, 98%);
     --secondary: hsl(0, 0%, 96.1%);
     --secondary-foreground: hsl(0, 0%, 9%);
     --muted: hsl(0, 0%, 96.1%);
     --muted-foreground: hsl(0, 0%, 45.1%);
-    --accent: hsl(255, 60%, 96%);
-    --accent-foreground: hsl(255, 50%, 30%);
+    --accent: hsl(176, 45%, 91%); /* Tiffany blue wash */
+    --accent-foreground: hsl(220, 64%, 34%);
     --destructive: hsl(0, 84.2%, 60.2%);
     --destructive-foreground: hsl(0, 0%, 98%);
     --success: hsl(142, 71%, 45%);
     --success-foreground: hsl(0, 0%, 98%);
     --border: hsl(0, 0%, 92.8%);
     --input: hsl(0, 0%, 89.8%);
-    --ring: #4c2ab6;
+    --ring: #4169e1;
     --chart-1: hsl(12, 76%, 61%);
     --chart-2: hsl(173, 58%, 39%);
     --chart-3: hsl(197, 37%, 24%);
@@ -117,49 +117,95 @@
     --radius: 0.5rem;
     --sidebar-background: hsl(0, 0%, 98%);
     --sidebar-foreground: hsl(240, 5.3%, 30%);
-    --sidebar-primary: #4c2ab6;
+    --sidebar-primary: #4169e1;
     --sidebar-primary-foreground: hsl(0, 0%, 98%);
     --sidebar-accent: hsl(0, 0%, 94%);
     --sidebar-accent-foreground: hsl(0, 0%, 30%);
     --sidebar-border: hsl(0, 0%, 91%);
-    --sidebar-ring: #4c2ab6;
+    --sidebar-ring: #4169e1;
 }
 
 .dark {
-    --background: hsl(0, 0%, 9%);
+    --background: hsl(150, 10%, 8%);
     --foreground: hsl(0, 0%, 98%);
-    --card: hsl(0, 0%, 12%);
+    --card: hsl(150, 9%, 11%);
     --card-foreground: hsl(0, 0%, 98%);
-    --popover: hsl(0, 0%, 12%);
+    --popover: hsl(150, 9%, 11%);
     --popover-foreground: hsl(0, 0%, 98%);
-    --primary: hsl(255, 70%, 62%); /* ProjectSend brand, lightened for dark surfaces */
+    --primary: hsl(158, 55%, 48%); /* TyreeNet teal on dark surfaces */
     --primary-foreground: hsl(0, 0%, 98%);
     --secondary: hsl(0, 0%, 17%);
     --secondary-foreground: hsl(0, 0%, 98%);
     --muted: hsl(0, 0%, 14%);
     --muted-foreground: hsl(0, 0%, 65%);
-    --accent: hsl(255, 25%, 18%);
-    --accent-foreground: hsl(255, 60%, 92%);
+    --accent: hsl(155, 24%, 17%);
+    --accent-foreground: hsl(150, 45%, 90%);
     --destructive: hsl(0, 84%, 60%);
     --destructive-foreground: hsl(0, 0%, 98%);
     --success: hsl(142, 65%, 42%);
     --success-foreground: hsl(0, 0%, 98%);
     --border: hsl(0, 0%, 18%);
     --input: hsl(0, 0%, 18%);
-    --ring: hsl(255, 70%, 62%);
+    --ring: hsl(158, 55%, 48%);
     --chart-1: hsl(220, 70%, 50%);
     --chart-2: hsl(160, 60%, 45%);
     --chart-3: hsl(30, 80%, 55%);
     --chart-4: hsl(280, 65%, 60%);
     --chart-5: hsl(340, 75%, 55%);
-    --sidebar-background: hsl(0, 0%, 7%);
+    --sidebar-background: hsl(150, 12%, 6%);
     --sidebar-foreground: hsl(0, 0%, 80%);
-    --sidebar-primary: hsl(255, 70%, 62%);
+    --sidebar-primary: hsl(158, 55%, 48%);
     --sidebar-primary-foreground: hsl(0, 0%, 98%);
     --sidebar-accent: hsl(0, 0%, 18%);
     --sidebar-accent-foreground: hsl(240, 4.8%, 95.9%);
     --sidebar-border: hsl(0, 0%, 18%);
-    --sidebar-ring: hsl(255, 70%, 62%);
+    --sidebar-ring: hsl(158, 55%, 48%);
+}
+
+/* TyreeNet appearance palettes. Tiffany uses the light defaults above. */
+.theme-pigeon {
+    --background: hsl(210, 24%, 96%);
+    --card: hsl(210, 28%, 99%);
+    --popover: hsl(210, 28%, 99%);
+    --primary: #526f91;
+    --accent: hsl(210, 24%, 89%);
+    --accent-foreground: hsl(213, 36%, 29%);
+    --border: hsl(210, 18%, 84%);
+    --ring: #526f91;
+    --sidebar-background: hsl(210, 24%, 93%);
+    --sidebar-primary: #526f91;
+    --sidebar-ring: #526f91;
+}
+
+.theme-royal {
+    --background: hsl(220, 50%, 98%);
+    --primary: #274dcc;
+    --accent: hsl(224, 74%, 93%);
+    --accent-foreground: hsl(224, 70%, 31%);
+    --ring: #274dcc;
+    --sidebar-background: hsl(220, 55%, 96%);
+    --sidebar-primary: #274dcc;
+    --sidebar-ring: #274dcc;
+}
+
+.theme-midnight.dark {
+    --background: hsl(215, 24%, 8%);
+    --card: hsl(214, 21%, 11%);
+    --popover: hsl(214, 21%, 11%);
+    --primary: #81d8d0;
+    --accent: hsl(220, 35%, 19%);
+    --accent-foreground: hsl(176, 58%, 88%);
+    --ring: #81d8d0;
+    --sidebar-background: hsl(216, 28%, 6%);
+    --sidebar-primary: #81d8d0;
+    --sidebar-ring: #81d8d0;
+}
+
+.tyreenet-knot-field {
+    background-image:
+        linear-gradient(45deg, transparent 46%, color-mix(in srgb, var(--primary) 8%, transparent) 47% 53%, transparent 54%),
+        linear-gradient(-45deg, transparent 46%, color-mix(in srgb, var(--primary) 8%, transparent) 47% 53%, transparent 54%);
+    background-size: 48px 48px;
 }
 
 @layer base {

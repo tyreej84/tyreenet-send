@@ -226,6 +226,7 @@ class FilesController extends Controller
                     'url' => route('share.show', $link->token),
                     'expires_at' => $link->expires_at?->toIso8601String(),
                     'max_downloads' => $link->max_downloads,
+                    'password_protected' => $link->isPasswordProtected(),
                     'downloads_count' => $link->downloads_count,
                     'revoke_url' => route('share-links.destroy', $link, false),
                 ])->values(),

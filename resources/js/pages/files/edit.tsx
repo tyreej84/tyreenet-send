@@ -35,6 +35,7 @@ interface ShareLink {
     expires_at: string | null;
     max_downloads: number | null;
     downloads_count: number;
+    password_protected: boolean;
     revoke_url: string;
 }
 
@@ -170,8 +171,13 @@ export default function FilesEdit({
         return comments_enabled ? 'comments' : 'activity';
     });
     const [target, setTarget] = useState('');
-    const [shareExpiresAt, setShareExpiresAt] = useState('');
-    const [shareMaxDownloads, setShareMaxDownloads] = useState('');
+    const [shareExpiresAt, setShareExpiresAt] = useState(() => {
+        const expiry = new Date();
+        expiry.setDate(expiry.getDate() + 7);
+        return expiry.toISOString().slice(0, 10);
+    });
+    const [shareMaxDownloads, setShareMaxDownloads] = useState('10');
+    const [sharePassword, setSharePassword] = useState('');
     const [useCustomToken, setUseCustomToken] = useState(false);
     const [customToken, setCustomToken] = useState('');
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -268,6 +274,7 @@ export default function FilesEdit({
             {
                 expires_at: shareExpiresAt || null,
                 max_downloads: shareMaxDownloads === '' ? null : Number(shareMaxDownloads),
+                password: sharePassword || null,
                 token: useCustomToken ? customToken : null,
             },
             {
@@ -275,6 +282,7 @@ export default function FilesEdit({
                 onSuccess: () => {
                     setShareExpiresAt('');
                     setShareMaxDownloads('');
+                    setSharePassword('');
                     setUseCustomToken(false);
                     setCustomToken('');
                     setLinkDialogOpen(false);
@@ -841,7 +849,11 @@ export default function FilesEdit({
                                                         value={shareExpiresAt}
                                                         onChange={(e) => setShareExpiresAt(e.target.value)}
                                                     />
-                                                    <p className="text-muted-foreground text-xs">{t('Leave empty for a link that never expires.')}</p>
+                                                    <p className="text-muted-foreground text-xs">
+                                                        {t(
+                                                            'TyreeNet defaults new links to seven days. Clear this only when ongoing access is intended.',
+                                                        )}
+                                                    </p>
                                                 </div>
                                             )}
                                             {can_limit_downloads && (
@@ -855,9 +867,29 @@ export default function FilesEdit({
                                                         value={shareMaxDownloads}
                                                         onChange={(e) => setShareMaxDownloads(e.target.value)}
                                                     />
-                                                    <p className="text-muted-foreground text-xs">{t('Leave empty for unlimited downloads.')}</p>
+                                                    <p className="text-muted-foreground text-xs">
+                                                        {t(
+                                                            'TyreeNet defaults new links to ten downloads. Clear this only when unlimited access is intended.',
+                                                        )}
+                                                    </p>
                                                 </div>
                                             )}
+
+                                            <div className="grid gap-1">
+                                                <Label htmlFor="share-password">{t('Password (optional)')}</Label>
+                                                <Input
+                                                    id="share-password"
+                                                    type="password"
+                                                    autoComplete="new-password"
+                                                    minLength={8}
+                                                    value={sharePassword}
+                                                    onChange={(e) => setSharePassword(e.target.value)}
+                                                />
+                                                <p className="text-muted-foreground text-xs">
+                                                    {t('Recipients must enter this password before the file can be downloaded. Share it separately from the link.')}
+                                                </p>
+                                                <InputError message={pageErrors.password} />
+                                            </div>
 
                                             <div className="grid gap-2">
                                                 <div className="flex items-center gap-2">
@@ -906,6 +938,7 @@ export default function FilesEdit({
                                                 {link.max_downloads !== null
                                                     ? t(':used / :limit downloads', { used: link.downloads_count, limit: link.max_downloads })
                                                     : t(':count downloads', { count: link.downloads_count })}
+                                                {link.password_protected ? ` · ${t('Password protected')}` : ''}
                                             </p>
                                         </div>
                                         <div className="flex shrink-0 gap-1">

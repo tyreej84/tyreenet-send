@@ -47,7 +47,7 @@ export default function PortalLayout({ children }: PortalLayoutProps) {
                     </Link>
                     <nav className="flex items-center gap-4 text-sm">
                         <Link href={route('my-files.index')} className="text-muted-foreground hover:text-foreground">
-                            {t('My files')}
+                            {t('Files shared with me')}
                         </Link>
                         <Link href={route('my-groups.index')} className="text-muted-foreground hover:text-foreground">
                             {t('My groups')}

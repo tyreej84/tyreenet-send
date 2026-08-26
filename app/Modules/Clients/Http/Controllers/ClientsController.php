@@ -17,6 +17,7 @@ use App\Modules\Clients\Notifications\ClientWelcomeNotification;
 use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Identity\AccountContentDeletion;
 use App\Modules\Identity\Models\Role;
+use App\Modules\Identity\Notifications\ResetPasswordNotification;
 use App\Modules\Identity\Permissions\SystemRole;
 use App\Modules\Identity\TwoFactor\TwoFactorAdministration;
 use App\Modules\Identity\UserType;
@@ -26,6 +27,8 @@ use App\Support\Pagination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Password as PasswordBroker;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
@@ -101,7 +104,8 @@ class ClientsController extends Controller
         $validated = $request->validate(array_merge([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'confirmed', Password::defaults()],
+            'invite' => ['sometimes', 'boolean'],
+            'password' => [Rule::requiredIf(! $request->boolean('invite')), 'nullable', 'confirmed', Password::defaults()],
             'storage_quota_mb' => ['nullable', 'integer', 'min:0'],
         ], $this->customFieldRules()));
 
@@ -112,7 +116,9 @@ class ClientsController extends Controller
             'role_id' => Role::query()->where('name', SystemRole::Client->value)->value('id'),
             'name' => $validated['name'],
             'email' => $validated['email'],
-            'password' => $validated['password'],
+            // Invitation accounts receive a one-time set-password link;
+            // the generated secret is never shown or transmitted.
+            'password' => $request->boolean('invite') ? Str::password(48) : $validated['password'],
             // 0 (including an omitted field) means "no custom quota" —
             // it inherits Setting::DefaultClientStorageQuotaMb at
             // enforcement time (see ClientStorageUsage::quotaMb()), not
@@ -126,11 +132,15 @@ class ClientsController extends Controller
 
         $this->saveCustomFieldValues($client, $validated['custom_field_values'] ?? []);
 
-        if ($this->settings->get(Setting::EmailNotificationsEnabled) === true) {
+        if ($request->boolean('invite')) {
+            $client->notify(new ResetPasswordNotification(PasswordBroker::createToken($client), invitation: true));
+        } elseif ($this->settings->get(Setting::EmailNotificationsEnabled) === true) {
             $client->notify(new ClientWelcomeNotification);
         }
 
-        return redirect()->route('clients.edit', $client)->with('success', __('Client created.'));
+        $message = $request->boolean('invite') ? __('Recipient invited.') : __('Recipient created.');
+
+        return redirect()->route('clients.edit', $client)->with('success', $message);
     }
 
     public function edit(User $client): Response

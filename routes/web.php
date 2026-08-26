@@ -71,6 +71,7 @@ Route::get('setup/success', [SetupController::class, 'success'])->name('setup.su
 // as auth.php's `throttle:6,1` routes, so opening six share links locked the
 // visitor out of the two-factor challenge and of password reset.
 Route::get('s/{token}', [PublicShareController::class, 'show'])->middleware('throttle:30,1,share-link')->name('share.show');
+Route::post('s/{token}/unlock', [PublicShareController::class, 'unlock'])->middleware('throttle:10,1,share-link-unlock')->name('share.unlock');
 Route::get('s/{token}/download', [PublicShareController::class, 'download'])->middleware('throttle:30,1,share-link')->name('share.download');
 
 Route::middleware(['auth'])->group(function () {

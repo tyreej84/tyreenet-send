@@ -148,6 +148,17 @@ services:
     profiles:
       - dev
 
+  # Optional local malware scanner. Start with `docker compose --profile
+  # security up -d clamav` and set MALWARE_SCAN_ENABLED=true in .env.
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    profiles:
+      - security
+
 volumes:
   db-data:
   redis-data:
+  clamav-data:

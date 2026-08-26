@@ -12,6 +12,9 @@ use App\Modules\Files\Notifications\NewVersionAvailableNotification;
 use App\Modules\Files\Notifications\NewVersionDigestNotification;
 use App\Modules\Files\Thumbnails\Events\ImageRenderingChanged;
 use App\Modules\Files\Thumbnails\RenderedImageCache;
+use App\Modules\Files\Uploads\ClamAvMalwareScanner;
+use App\Modules\Files\Uploads\MalwareScanner;
+use App\Modules\Files\Uploads\NullMalwareScanner;
 use App\Modules\Notifications\NotificationTypeDefinition;
 use App\Modules\Notifications\NotificationTypeRegistry;
 use Illuminate\Support\Facades\Event;
@@ -20,6 +23,13 @@ use Illuminate\Support\ServiceProvider;
 
 class FilesServiceProvider extends ServiceProvider
 {
+    public function register(): void
+    {
+        $this->app->bind(MalwareScanner::class, fn () => config('malware.enabled')
+            ? new ClamAvMalwareScanner
+            : new NullMalwareScanner);
+    }
+
     public function boot(): void
     {
         Gate::policy(File::class, FilePolicy::class);
@@ -41,8 +51,8 @@ class FilesServiceProvider extends ServiceProvider
         // through a pipeline the preference screen could not see.
         $this->app->make(NotificationTypeRegistry::class)->register(new NotificationTypeDefinition(
             key: 'file_shared',
-            label: 'A file or folder was shared with you',
-            template: ':itemName was shared with you',
+            label: 'TyreeNet shared a file or folder with you',
+            template: ':itemName was shared with you through TyreeNet',
             defaultEmailEnabled: true,
             digestMail: FileSharedNotification::class,
             digestMailMany: FileShareDigestNotification::class,

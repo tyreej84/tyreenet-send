@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
 
-export type Appearance = 'light' | 'dark' | 'system';
+export type Appearance = 'tiffany' | 'pigeon' | 'royal' | 'midnight' | 'system' | 'highland' | 'heather' | 'light' | 'dark';
 
 const prefersDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
+const normalizeAppearance = (appearance: Appearance): Appearance => {
+    if (appearance === 'light' || appearance === 'highland') return 'tiffany';
+    if (appearance === 'heather') return 'pigeon';
+    if (appearance === 'dark') return 'midnight';
+    return appearance;
+};
+
 const applyTheme = (appearance: Appearance) => {
-    const isDark = appearance === 'dark' || (appearance === 'system' && prefersDark());
+    const normalized = normalizeAppearance(appearance);
+    const isDark = normalized === 'midnight' || (normalized === 'system' && prefersDark());
 
     document.documentElement.classList.toggle('dark', isDark);
+    document.documentElement.classList.remove('theme-highland', 'theme-heather', 'theme-tiffany', 'theme-pigeon', 'theme-royal', 'theme-midnight');
+    document.documentElement.classList.add(`theme-${normalized === 'system' ? (isDark ? 'midnight' : 'tiffany') : normalized}`);
 };
 
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -55,9 +65,10 @@ export function useAppearance() {
     const [appearance, setAppearance] = useState<Appearance>('system');
 
     const updateAppearance = (mode: Appearance) => {
-        setAppearance(mode);
-        localStorage.setItem('appearance', mode);
-        applyTheme(mode);
+        const normalized = normalizeAppearance(mode);
+        setAppearance(normalized);
+        localStorage.setItem('appearance', normalized);
+        applyTheme(normalized);
     };
 
     useEffect(() => {

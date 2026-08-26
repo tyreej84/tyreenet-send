@@ -2,7 +2,6 @@ import { type BreadcrumbItem } from '@/types';
 import { Head, Link } from '@inertiajs/react';
 import { ArrowRight, CircleCheck } from 'lucide-react';
 
-import DiscordInvitation from '@/components/discord-invitation';
 import MadeInArgentina from '@/components/made-in-argentina';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/use-translation';
@@ -73,10 +72,6 @@ export default function WhatsNew({ version, previousVersion, justUpdated, releas
                         </p>
                     </div>
 
-                    {/* The invitation, above the notes on purpose: it is the
-                        part with a person on the other end of it. */}
-                    <DiscordInvitation />
-
                     {releases.length > 0 && (
                         <div className="space-y-8">
                             <h2 className="text-lg font-semibold tracking-tight">{t("What's new")}</h2>
@@ -88,9 +83,6 @@ export default function WhatsNew({ version, previousVersion, justUpdated, releas
                     )}
 
                     <div className="space-y-6">
-                        {/* Outline, so the invitation above is the one filled
-                            button on the page. Leaving is not the thing being
-                            encouraged here. */}
                         <div className="flex justify-center">
                             <Button asChild variant="outline">
                                 <Link href={route('dashboard')}>

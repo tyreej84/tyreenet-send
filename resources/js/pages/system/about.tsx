@@ -83,9 +83,6 @@ export default function About({ license, environment, updated }: AboutProps) {
                                 {t('Support the project')}
                             </a>
                         )}
-                        <a href={links.discord} target="_blank" rel="noreferrer" className="underline hover:no-underline">
-                            {t('Discord')}
-                        </a>
                         <Link href={route('system.getting-started')} className="underline hover:no-underline">
                             {t('Getting started')}
                         </Link>
@@ -102,15 +99,18 @@ export default function About({ license, environment, updated }: AboutProps) {
                     {environment && (
                         <div>
                             <h2 className="mb-1 text-sm font-medium">{t('Environment')}</h2>
-                            <p className="text-muted-foreground mb-2 text-sm">
-                                {t('Worth including when you report a problem.')}
-                            </p>
+                            <p className="text-muted-foreground mb-2 text-sm">{t('Worth including when you report a problem.')}</p>
                             <dl className="divide-y text-sm">
                                 <Row label={t('Version')} value={environment.version} />
                                 {/* Absent until this installation has been
                                     updated at least once through the command —
                                     a fresh install has no update to date. */}
-                                {updated && <Row label={t('Updated')} value={t(':version on :date', { version: updated.version, date: dateTime(updated.at) })} />}
+                                {updated && (
+                                    <Row
+                                        label={t('Updated')}
+                                        value={t(':version on :date', { version: updated.version, date: dateTime(updated.at) })}
+                                    />
+                                )}
                                 <Row label={t('Edition')} value={environment.edition} />
                                 <Row label="PHP" value={environment.php} />
                                 <Row label="Laravel" value={environment.laravel} />

@@ -8,6 +8,8 @@ use App\Modules\Audit\ActivityLog;
 use App\Modules\Files\Models\Category;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\FileAssignment;
+use App\Modules\Files\Uploads\MalwareDetected;
+use App\Modules\Files\Uploads\MalwareScanner;
 use App\Modules\Files\Uploads\StoreUploadedFile;
 use App\Modules\Groups\Models\Group;
 use App\Modules\Identity\Models\Role;
@@ -15,6 +17,7 @@ use App\Modules\Identity\Models\RolePermission;
 use App\Modules\Identity\Permissions\SystemRole;
 use App\Modules\Platform\Settings\Setting;
 use App\Modules\Platform\Settings\Settings;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -71,6 +74,24 @@ test('uploading stores the file with persisted metadata and an audit entry', fun
 
     Storage::disk('files')->assertExists($file->path);
     expect(ActivityLog::query()->where('action', Action::FileUploaded)->where('subject_name', 'contract')->exists())->toBeTrue();
+});
+
+test('malware scanning rejects and deletes an infected upload before creating a file record', function () {
+    config()->set('malware.enabled', true);
+    app()->instance(MalwareScanner::class, new class implements MalwareScanner
+    {
+        public function scan($stream): void
+        {
+            throw new MalwareDetected('stream: Eicar-Test-Signature FOUND');
+        }
+    });
+
+    $this->actingAs($this->admin)->post('/files', [
+        'file' => UploadedFile::fake()->create('unsafe.pdf', 12, 'application/pdf'),
+    ])->assertSessionHasErrors('file');
+
+    expect(File::query()->count())->toBe(0)
+        ->and(Storage::disk('files')->allFiles())->toBe([]);
 });
 
 test('downloads answer with X-Accel-Redirect and never the bytes', function () {

@@ -400,7 +400,7 @@ enum Setting: string
     public function default(): string|bool|int|array
     {
         return match ($this) {
-            self::SiteName => 'ProjectSend',
+            self::SiteName => 'TyreeNet Send',
             self::TwoFactorEnforcement => 'none',
             // 12 rather than Laravel's 8: this was the value security audit
             // finding 14 settled on, and the setting exists so an
@@ -418,13 +418,13 @@ enum Setting: string
             self::ClientsCanRegister,
             self::ClientsAutoApprove,
             self::EmailNotificationsEnabled,
-            self::DiscourageSearchIndexing,
             self::PublicListingEnabled,
-            self::ExpiredFilesAutoDeleteEnabled,
             self::PublicCommentsEnabled,
             self::OrphanFilesAutoDeleteEnabled => false,
 
             self::CheckForUpdates,
+            self::DiscourageSearchIndexing,
+            self::ExpiredFilesAutoDeleteEnabled,
             self::CommentsGuestModeration,
             // On, so that an installation updating into these switches
             // keeps the preview it already had rather than losing it to a

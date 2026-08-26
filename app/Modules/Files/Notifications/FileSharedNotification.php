@@ -50,17 +50,17 @@ class FileSharedNotification extends Notification implements ShouldQueue
 
         if (($override = $this->overrideOrNull($slot)) !== null) {
             return $this->mailFromOverride($override, [':name' => $this->itemName])
-                ->action(__('View your files'), route('my-files.index'));
+                ->action(__('View files shared with me'), route('my-files.index'));
         }
 
-        $subject = $this->isFolder ? __('A folder has been shared with you') : __('A file has been shared with you');
+        $subject = $this->isFolder ? __('TyreeNet shared a folder with you') : __('TyreeNet shared a file with you');
         $line = $this->isFolder
-            ? __('The folder ":name" has been shared with you.', ['name' => $this->itemName])
-            : __('The file ":name" has been shared with you.', ['name' => $this->itemName]);
+            ? __('The folder ":name" is ready for you in TyreeNet Send.', ['name' => $this->itemName])
+            : __('The file ":name" is ready for you in TyreeNet Send.', ['name' => $this->itemName]);
 
         return (new MailMessage)
             ->subject($subject)
             ->line($line)
-            ->action(__('View your files'), route('my-files.index'));
+            ->action(__('View files shared with me'), route('my-files.index'));
     }
 }

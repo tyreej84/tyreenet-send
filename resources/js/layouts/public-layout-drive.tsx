@@ -1,4 +1,5 @@
 import AppLogoIcon from '@/components/app-logo-icon';
+import { AppearanceSwitcher } from '@/components/appearance-switcher';
 import { LocaleSwitcher } from '@/components/locale-switcher';
 import { PoweredBy } from '@/components/powered-by';
 import { type SharedData } from '@/types';
@@ -27,11 +28,14 @@ export default function PublicLayoutDrive({ children, title, description }: Publ
                     {branding?.logo_url ? (
                         <img src={branding.logo_url} alt={name} className="size-7 object-contain" />
                     ) : (
-                        <AppLogoIcon className="size-7 text-blue-600" />
+                        <AppLogoIcon className="text-primary size-7" />
                     )}
                     <span className="text-sm font-medium text-neutral-800 dark:text-neutral-200">{name}</span>
                 </Link>
-                <LocaleSwitcher />
+                <div className="flex items-center gap-1">
+                    <LocaleSwitcher />
+                    <AppearanceSwitcher />
+                </div>
             </header>
 
             <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8 md:px-8">

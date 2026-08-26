@@ -85,6 +85,7 @@ interface ShareLink {
     expires_at: string | null;
     max_downloads: number | null;
     downloads_count: number;
+    password_protected: boolean;
 }
 
 interface ActivityEntry {
@@ -359,6 +360,7 @@ export function DetailsPanel({ target, onClose }: { target: DetailsTarget; onClo
                                                     {link.max_downloads !== null
                                                         ? t(':used / :limit downloads', { used: link.downloads_count, limit: link.max_downloads })
                                                         : t(':count downloads', { count: link.downloads_count })}
+                                                    {link.password_protected ? ` · ${t('Password protected')}` : ''}
                                                 </p>
                                             </div>
                                         ))}

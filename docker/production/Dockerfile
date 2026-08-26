@@ -18,10 +18,13 @@
 
 FROM php:8.4-fpm-alpine
 
-LABEL org.opencontainers.image.title="ProjectSend" \
-      org.opencontainers.image.description="Client file sharing, self-hosted. Community edition." \
-      org.opencontainers.image.source="https://github.com/projectsend/projectsend" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.title="TyreeNet Send" \
+      org.opencontainers.image.description="TyreeNet's customized ProjectSend file-delivery service" \
+      org.opencontainers.image.source="https://github.com/tyreej84/tyreenet-send" \
+      org.opencontainers.image.url="https://send.tyreenet.com" \
+      org.opencontainers.image.vendor="TyreeNet" \
+      org.opencontainers.image.base.name="docker.io/projectsend/projectsend:2" \
+      org.opencontainers.image.licenses="GPL-2.0-or-later"
 
 # Extension set is identical to docker/app/Dockerfile — if that one gains an
 # extension because the application started needing it, this one has to gain

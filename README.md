@@ -2,10 +2,10 @@
   <img src="public/favicon.svg" alt="" width="84">
 </p>
 
-<h1 align="center">ProjectSend</h1>
+<h1 align="center">TyreeNet Send</h1>
 
 <p align="center">
-  <strong>Share files with your clients, from your own server.</strong>
+  <strong>Private file delivery for TyreeNet.</strong>
 </p>
 
 <p align="center">
@@ -15,6 +15,12 @@
 </p>
 
 ---
+
+> **About this distribution:** TyreeNet Send is an independently maintained
+> customization of [ProjectSend](https://github.com/projectsend/projectsend),
+> distributed under the GNU GPL v2 or later. It is not an official ProjectSend
+> release. ProjectSend retains full credit for the upstream application; see
+> [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
 
 ProjectSend is a self-hosted application for getting files to the people you work with. You upload
 what you want to send, choose exactly who can see it, and each client signs in to their own private

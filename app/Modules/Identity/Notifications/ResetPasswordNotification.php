@@ -27,6 +27,7 @@ class ResetPasswordNotification extends Notification implements ShouldQueue
 
     public function __construct(
         public readonly string $token,
+        public readonly bool $invitation = false,
     ) {}
 
     /**
@@ -46,14 +47,26 @@ class ResetPasswordNotification extends Notification implements ShouldQueue
 
         $expireMinutes = (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire');
 
+        // Invitations intentionally do not use the password-reset template:
+        // telling a new recipient they requested a reset is confusing and
+        // undermines the trust the invitation is meant to establish.
+        if ($this->invitation) {
+            return (new MailMessage)
+                ->subject(__('You have been invited to TyreeNet Send'))
+                ->line(__('A private TyreeNet Send account has been created for you. Use the secure link below to choose your password.'))
+                ->action(__('Accept invitation'), $url)
+                ->line(__('This invitation link will expire in :count minutes.', ['count' => $expireMinutes]))
+                ->line(__('If you were not expecting this invitation, you can safely ignore this email.'));
+        }
+
         if (($override = $this->overrideOrNull(EmailTemplateSlot::PasswordReset)) !== null) {
             return $this->mailFromOverride($override, [':count' => (string) $expireMinutes])
                 ->action(__('Reset Password'), $url);
         }
 
         return (new MailMessage)
-            ->subject(__('Reset Password Notification'))
-            ->line(__('You are receiving this email because we received a password reset request for your account.'))
+            ->subject(__('Reset your TyreeNet Send password'))
+            ->line(__('We received a request to reset your TyreeNet Send password.'))
             ->action(__('Reset Password'), $url)
             ->line(__('This password reset link will expire in :count minutes.', ['count' => $expireMinutes]))
             ->line(__('If you did not request a password reset, no further action is required.'));

@@ -2,7 +2,6 @@ import { type BreadcrumbItem, type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 import { ArrowRight, Boxes, Check, Clock, Contact, MailOpen, Palette, Send, Upload, Users, type LucideIcon } from 'lucide-react';
 
-import DiscordInvitation from '@/components/discord-invitation';
 import MadeInArgentina from '@/components/made-in-argentina';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from '@/hooks/use-translation';
@@ -90,13 +89,6 @@ export default function GettingStarted({ items, justInstalled }: GettingStartedP
                             </li>
                         ))}
                     </ul>
-
-                    {/* Last, deliberately. Somebody who has just installed this
-                        came here with a job in mind, and the fastest way to
-                        lose them is to lead with a social invitation. It is
-                        still worth making — after the work, not in front of
-                        it. */}
-                    <DiscordInvitation />
 
                     <div className="space-y-6">
                         <div className="flex justify-center">

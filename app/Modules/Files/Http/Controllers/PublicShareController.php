@@ -13,7 +13,9 @@ use App\Modules\Files\Models\Category;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\ShareLink;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
@@ -31,7 +33,7 @@ class PublicShareController extends Controller
         private readonly StoredFileResponse $bytes,
     ) {}
 
-    public function show(string $token): InertiaResponse
+    public function show(Request $request, string $token): InertiaResponse
     {
         $shareLink = ShareLink::query()->where('token', $token)->first();
         $file = $shareLink?->shareable;
@@ -55,6 +57,13 @@ class PublicShareController extends Controller
             return Inertia::render('share/show', ['status' => 'limit_reached']);
         }
 
+        if (! $this->hasPasswordAccess($request, $shareLink)) {
+            return Inertia::render('share/show', [
+                'status' => 'password_required',
+                'unlock_url' => route('share.unlock', $token),
+            ]);
+        }
+
         $file->loadMissing('categories');
 
         return Inertia::render('share/show', [
@@ -74,12 +83,32 @@ class PublicShareController extends Controller
         ]);
     }
 
-    public function download(string $token): Response|RedirectResponse
+    public function unlock(Request $request, string $token): RedirectResponse
+    {
+        $shareLink = ShareLink::query()->where('token', $token)->first();
+
+        if ($shareLink === null || ! $shareLink->isPasswordProtected()) {
+            return redirect()->route('share.show', $token);
+        }
+
+        $validated = $request->validate(['password' => ['required', 'string', 'max:255']]);
+
+        if (! Hash::check($validated['password'], (string) $shareLink->password_hash)) {
+            return back()->withErrors(['password' => __('That password is not correct.')]);
+        }
+
+        $request->session()->put($this->passwordSessionKey($shareLink), true);
+
+        return redirect()->route('share.show', $token);
+    }
+
+    public function download(Request $request, string $token): Response|RedirectResponse
     {
         $shareLink = ShareLink::query()->where('token', $token)->first();
         $file = $shareLink?->shareable;
 
-        if ($shareLink === null || ! $file instanceof File || $shareLink->isExpired() || $file->isExpired()) {
+        if ($shareLink === null || ! $file instanceof File || $shareLink->isExpired() || $file->isExpired()
+            || ! $this->hasPasswordAccess($request, $shareLink)) {
             return redirect()->route('share.show', $token);
         }
 
@@ -103,5 +132,16 @@ class PublicShareController extends Controller
         $this->activity->log(Action::ShareLinkDownloaded, subject: $file);
 
         return $this->bytes->attachment($file);
+    }
+
+    private function hasPasswordAccess(Request $request, ShareLink $shareLink): bool
+    {
+        return ! $shareLink->isPasswordProtected()
+            || $request->session()->get($this->passwordSessionKey($shareLink)) === true;
+    }
+
+    private function passwordSessionKey(ShareLink $shareLink): string
+    {
+        return 'share_link_unlocked.'.$shareLink->id;
     }
 }

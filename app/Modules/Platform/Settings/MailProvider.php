@@ -24,6 +24,7 @@ enum MailProvider: string
     case Mailgun = 'mailgun';
     case Postmark = 'postmark';
     case AmazonSes = 'ses';
+    case Zoho = 'zoho';
     case Microsoft365 = 'microsoft365';
     case Gmail = 'gmail';
 
@@ -35,6 +36,7 @@ enum MailProvider: string
             self::Mailgun => 'Mailgun',
             self::Postmark => 'Postmark',
             self::AmazonSes => 'Amazon SES',
+            self::Zoho => 'Zoho Mail (paid domain)',
             self::Microsoft365 => 'Microsoft 365 (OAuth)',
             self::Gmail => 'Google / Gmail (OAuth)',
         };
@@ -48,6 +50,7 @@ enum MailProvider: string
             self::Mailgun => 'smtp.mailgun.org',
             self::Postmark => 'smtp.postmarkapp.com',
             self::AmazonSes => 'email-smtp.us-east-1.amazonaws.com',
+            self::Zoho => 'smtppro.zoho.com',
         };
     }
 
@@ -55,7 +58,7 @@ enum MailProvider: string
     {
         return match ($this) {
             self::Custom, self::Microsoft365, self::Gmail => null,
-            self::SendGrid, self::Mailgun, self::Postmark, self::AmazonSes => 587,
+            self::SendGrid, self::Mailgun, self::Postmark, self::AmazonSes, self::Zoho => 587,
         };
     }
 

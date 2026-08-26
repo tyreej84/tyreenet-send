@@ -7,19 +7,20 @@
 # This is the file the Docker Hub description points at, so it is written
 # for someone who has never seen the project before.
 
-name: projectsend
+name: tyreenet-send
 
 services:
   app:
-    image: projectsend/projectsend:2
+    image: ghcr.io/tyreej84/tyreenet-send:latest
     restart: unless-stopped
     ports:
-      # Put a TLS-terminating proxy in front of this in any real install.
-      # ProjectSend issues download links and password-reset emails using
-      # APP_URL, so that value — not this port — is what users must reach.
-      - "8080:80"
+      # Main-server nginx terminates TLS and proxies send.tyreenet.com over
+      # the internal network to this host. The host firewall must restrict
+      # this published port to the nginx server.
+      - "0.0.0.0:9675:80"
     environment:
-      APP_URL: https://files.example.com
+      APP_NAME: TyreeNet Send
+      APP_URL: https://send.tyreenet.com
       APP_ENV: production
       APP_DEBUG: "false"
 
@@ -44,18 +45,28 @@ services:
       # are logged in — it has a "send test" button. These are the fallback
       # until then.
       MAIL_MAILER: smtp
-      MAIL_HOST: smtp.example.com
+      MAIL_HOST: smtppro.zoho.com
       MAIL_PORT: "587"
-      MAIL_USERNAME: ""
+      MAIL_USERNAME: no-reply@tyreenet.com
       MAIL_PASSWORD: ""
-      MAIL_FROM_ADDRESS: files@example.com
+      MAIL_ENCRYPTION: tls
+      MAIL_FROM_ADDRESS: no-reply@tyreenet.com
+      MAIL_FROM_NAME: TyreeNet Send
 
       # Required whenever anything sits between your visitors and this
       # container — which includes the reverse proxy you should be running.
       # Without it every visitor appears to come from the proxy: the login
       # rate limiter treats all of your users as one attacker, and the
       # download log records the proxy's address.
-      TRUSTED_PROXIES: "*"
+      # Set this in the deployment .env to the main nginx server's internal
+      # IP. Do not use "*" now that port 9675 is reachable on the LAN.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?Set TRUSTED_PROXIES to the main nginx server LAN IP}
+
+      MALWARE_SCAN_ENABLED: "true"
+      MALWARE_SCAN_FAIL_CLOSED: "true"
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: "3310"
+      CLAMAV_TIMEOUT: "60"
 
       # Optional: uncomment these — with a password of your own — to create
       # the first administrator unattended and skip the setup screen. Left
@@ -70,6 +81,8 @@ services:
       - storage:/var/www/html/storage
     depends_on:
       db:
+        condition: service_healthy
+      clamav:
         condition: service_healthy
 
   db:
@@ -96,7 +109,19 @@ services:
     volumes:
       - redis-data:/data
 
+  clamav:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+
 volumes:
   storage:
   db-data:
   redis-data:
+  clamav-data:

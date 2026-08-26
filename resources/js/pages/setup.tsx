@@ -3,10 +3,10 @@ import { LoaderCircle } from 'lucide-react';
 import { FormEventHandler } from 'react';
 
 import InputError from '@/components/input-error';
+import { PasswordRequirements } from '@/components/password-requirements';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { PasswordRequirements } from '@/components/password-requirements';
 import { useTranslation } from '@/hooks/use-translation';
 import AuthLayout from '@/layouts/auth-layout';
 
@@ -22,7 +22,7 @@ interface SetupForm {
 export default function Setup() {
     const { t } = useTranslation();
     const { data, setData, post, processing, errors, reset } = useForm<SetupForm>({
-        site_name: 'ProjectSend',
+        site_name: 'TyreeNet Send',
         name: '',
         email: '',
         password: '',

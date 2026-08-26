@@ -23,7 +23,7 @@ export type WidgetKey = (typeof WIDGET_KEYS)[number];
 export const WIDGET_LABELS: Record<WidgetKey, string> = {
     counters: 'Counters',
     transfers: 'Transfers',
-    top_clients_by_storage: 'Top clients by storage',
+    top_clients_by_storage: 'Top recipients by storage',
     largest_files: 'Largest files',
     recent: 'Recent activity',
     system: 'System',
