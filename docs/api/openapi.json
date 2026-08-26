@@ -1,7 +1,7 @@
 {
     "openapi": "3.1.0",
     "info": {
-        "title": "ProjectSend",
+        "title": "TyreeNet Send",
         "version": "1.0.0",
         "description": "Staff-authenticated REST API for ProjectSend. Authenticate with a bearer token created under Settings \u2192 API tokens. See docs/api-guide.md for the narrative guide."
     },

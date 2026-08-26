@@ -74,14 +74,14 @@ test('an unknown or unavailable stored email theme resolves to default rather th
     expect($html)->toContain('box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1)');
 });
 
-test('the branded email theme renders its own css and the stock logo', function () {
+test('the branded email theme renders TyreeNet css and logo', function () {
     app(Settings::class)->set(Setting::EmailTheme, 'branded');
 
     expect(app(EmailThemeService::class)->currentThemeKey())->toBe('branded');
 
     $html = renderThemedNotificationHtml();
 
-    expect($html)->toContain('#3b0764')
+    expect($html)->toContain('#234e70')
         ->and($html)->toContain('<img')
         ->and($html)->toContain('apple-touch-icon.png');
 });

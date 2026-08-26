@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\User;
+use App\Modules\Audit\Models\DashboardWidgetPreference;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Models\RolePermission;
 use App\Modules\Platform\Capabilities\Edition;
@@ -122,6 +123,13 @@ test('the dashboard news prop appears only for staff who hold view_news, in both
     $this->artisan('projectsend:fetch-news')->assertSuccessful();
 
     $admin = User::factory()->create();
+    DashboardWidgetPreference::query()->create([
+        'user_id' => $admin->id,
+        'widget_key' => 'news',
+        'enabled' => true,
+        'column_index' => 1,
+        'position' => 3,
+    ]);
 
     foreach ([Edition::Community, Edition::Cloud] as $edition) {
         config()->set('projectsend.edition', $edition);

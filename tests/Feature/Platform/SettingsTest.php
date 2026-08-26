@@ -31,7 +31,7 @@ test('every setting declares a type and a default matching that type', function 
 });
 
 test('an unset setting returns its code default', function () {
-    expect(app(Settings::class)->get(Setting::SiteName))->toBe('ProjectSend')
+    expect(app(Settings::class)->get(Setting::SiteName))->toBe('TyreeNet Send')
         ->and(app(Settings::class)->get(Setting::ClientsCanRegister))->toBeFalse();
 });
 
@@ -91,7 +91,7 @@ test('staff can update the site name from system settings', function () {
     $this->get('/system/settings/general')->assertInertia(
         fn (AssertableInertia $page) => $page
             ->component('system/settings/general')
-            ->where('site_name', 'ProjectSend'),
+            ->where('site_name', 'TyreeNet Send'),
     );
 
     $this->patch('/system/settings/general', ['site_name' => 'Renamed'])->assertRedirect();
@@ -200,7 +200,7 @@ test('staff can view the theming settings page and its available theme options',
             ->where('theme', 'default')
             ->where('email_theme', 'default')
             ->where('themes', [
-                ['key' => 'default', 'label' => 'Default', 'description' => __('A clean, neutral layout that works well for any kind of file sharing.'), 'preview_url' => $previewFor('default'), 'preview_url_dark' => $previewFor('default', dark: true)],
+                ['key' => 'default', 'label' => 'TyreeNet', 'description' => __('A crafted, recipient-first layout with Celtic details and TyreeNet colors.'), 'preview_url' => $previewFor('default'), 'preview_url_dark' => $previewFor('default', dark: true)],
                 ['key' => 'compact', 'label' => 'Compact', 'description' => __('A dense, spreadsheet-style list that fits more files on screen — best for large collections and frequent uploaders.'), 'preview_url' => $previewFor('compact'), 'preview_url_dark' => $previewFor('compact', dark: true)],
                 ['key' => 'drive', 'label' => 'Drive', 'description' => __('A spacious, colorful layout inspired by cloud storage apps, with clear file-type icons and generous spacing.'), 'preview_url' => $previewFor('drive'), 'preview_url_dark' => $previewFor('drive', dark: true)],
                 ['key' => 'gallery', 'label' => 'Gallery', 'description' => __('A full-width photo grid built for visual browsing — the best choice for photographers and image-heavy collections.'), 'preview_url' => $previewFor('gallery'), 'preview_url_dark' => $previewFor('gallery', dark: true)],

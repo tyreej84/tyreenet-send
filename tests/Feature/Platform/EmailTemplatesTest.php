@@ -127,8 +127,8 @@ test('clients and unpermissioned staff cannot preview email templates', function
 test('an un-customized notification renders exactly as before', function () {
     $mail = (new FileSharedNotification('contract.pdf', false))->toMail(new User);
 
-    expect($mail->subject)->toBe('A file has been shared with you')
-        ->and($mail->introLines)->toBe(['The file "contract.pdf" has been shared with you.']);
+    expect($mail->subject)->toBe('TyreeNet shared a file with you')
+        ->and($mail->introLines)->toBe(['The file "contract.pdf" is ready for you in TyreeNet Send.']);
 });
 
 test('customizing FileShared changes the rendered subject and body with placeholders substituted', function () {
@@ -142,7 +142,7 @@ test('customizing FileShared changes the rendered subject and body with placehol
 
     expect($mail->subject)->toBe('New file for you')
         ->and($mail->introLines)->toBe(['Heads up!', 'We shared "contract.pdf" with you.'])
-        ->and($mail->actionText)->toBe('View your files');
+        ->and($mail->actionText)->toBe('View files shared with me');
 });
 
 test('an un-customized share digest lists every item after the fixed intro', function () {

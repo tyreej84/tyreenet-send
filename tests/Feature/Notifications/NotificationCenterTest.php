@@ -40,7 +40,7 @@ test('the index page paginates and returns a resolved template', function () {
     $this->actingAs($this->client)->get('/notifications')->assertInertia(
         fn (AssertableInertia $page) => $page->component('notifications/index')
             ->has('entries', 1)
-            ->where('entries.0.template', ':itemName was shared with you')
+            ->where('entries.0.template', ':itemName was shared with you through TyreeNet')
             ->where('entries.0.replacements.itemName', 'report.pdf')
             ->where('pagination.total', 1),
     );
