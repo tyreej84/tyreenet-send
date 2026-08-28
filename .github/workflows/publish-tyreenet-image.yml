@@ -92,7 +92,7 @@ jobs:
             org.opencontainers.image.base.name=docker.io/projectsend/projectsend:2
 
       - name: Build and publish image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: image-context
           file: image-context/docker/production/Dockerfile
