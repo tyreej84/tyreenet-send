@@ -94,6 +94,27 @@ The script briefly stops the application so the SQL dump and uploaded-file archi
 
 For external S3-compatible file storage, enable bucket versioning and lifecycle protection and back it up separately; the local storage archive does not duplicate remote objects.
 
+### Encrypted off-site backups
+
+Install `age` and `rclone` on the application host, keep the age private identity offline, and configure an rclone remote with write-only credentials where possible. Then schedule:
+
+```sh
+AGE_RECIPIENT='age1...' RCLONE_REMOTE='remote:tyreenet-send' \
+  sh /path/to/projectsend/scripts/backup-offsite.sh /srv/backups/projectsend
+```
+
+The wrapper creates a consistent local backup, encrypts it before upload, uploads its checksum, and removes the temporary plaintext archive. Test decryption and restoration with the offline identity before relying on the schedule.
+
+## Security alerts
+
+New-IP login and high-volume download alerts go to the administrator addresses under Email settings. Defaults alert after 25 downloads in 10 minutes and suppress repeats for one hour. They can be tuned in the deployment environment:
+
+```dotenv
+SECURITY_ALERTS_ENABLED=true
+SECURITY_ALERT_DOWNLOAD_THRESHOLD=25
+SECURITY_ALERT_DOWNLOAD_WINDOW_MINUTES=10
+```
+
 ## Monitoring
 
 - Probe `https://send.tyreenet.com/up` from an external monitor every minute.

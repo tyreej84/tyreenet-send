@@ -36,6 +36,7 @@ interface ShareLink {
     max_downloads: number | null;
     downloads_count: number;
     password_protected: boolean;
+    recipient_email: string | null;
     revoke_url: string;
 }
 
@@ -178,6 +179,7 @@ export default function FilesEdit({
     });
     const [shareMaxDownloads, setShareMaxDownloads] = useState('10');
     const [sharePassword, setSharePassword] = useState('');
+    const [shareRecipientEmail, setShareRecipientEmail] = useState('');
     const [useCustomToken, setUseCustomToken] = useState(false);
     const [customToken, setCustomToken] = useState('');
     const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -275,6 +277,7 @@ export default function FilesEdit({
                 expires_at: shareExpiresAt || null,
                 max_downloads: shareMaxDownloads === '' ? null : Number(shareMaxDownloads),
                 password: sharePassword || null,
+                recipient_email: shareRecipientEmail || null,
                 token: useCustomToken ? customToken : null,
             },
             {
@@ -283,6 +286,7 @@ export default function FilesEdit({
                     setShareExpiresAt('');
                     setShareMaxDownloads('');
                     setSharePassword('');
+                    setShareRecipientEmail('');
                     setUseCustomToken(false);
                     setCustomToken('');
                     setLinkDialogOpen(false);
@@ -876,6 +880,23 @@ export default function FilesEdit({
                                             )}
 
                                             <div className="grid gap-1">
+                                                <Label htmlFor="share-recipient-email">{t('Recipient email (optional)')}</Label>
+                                                <Input
+                                                    id="share-recipient-email"
+                                                    type="email"
+                                                    autoComplete="off"
+                                                    value={shareRecipientEmail}
+                                                    onChange={(e) => setShareRecipientEmail(e.target.value)}
+                                                />
+                                                <p className="text-muted-foreground text-xs">
+                                                    {t(
+                                                        'When set, the recipient must verify a one-time code sent to this address before downloading.',
+                                                    )}
+                                                </p>
+                                                <InputError message={pageErrors.recipient_email} />
+                                            </div>
+
+                                            <div className="grid gap-1">
                                                 <Label htmlFor="share-password">{t('Password (optional)')}</Label>
                                                 <Input
                                                     id="share-password"
@@ -886,7 +907,9 @@ export default function FilesEdit({
                                                     onChange={(e) => setSharePassword(e.target.value)}
                                                 />
                                                 <p className="text-muted-foreground text-xs">
-                                                    {t('Recipients must enter this password before the file can be downloaded. Share it separately from the link.')}
+                                                    {t(
+                                                        'Recipients must enter this password before the file can be downloaded. Share it separately from the link.',
+                                                    )}
                                                 </p>
                                                 <InputError message={pageErrors.password} />
                                             </div>
@@ -939,6 +962,7 @@ export default function FilesEdit({
                                                     ? t(':used / :limit downloads', { used: link.downloads_count, limit: link.max_downloads })
                                                     : t(':count downloads', { count: link.downloads_count })}
                                                 {link.password_protected ? ` · ${t('Password protected')}` : ''}
+                                                {link.recipient_email ? ` · ${t('Email verified: :email', { email: link.recipient_email })}` : ''}
                                             </p>
                                         </div>
                                         <div className="flex shrink-0 gap-1">

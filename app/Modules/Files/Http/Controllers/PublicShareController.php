@@ -12,10 +12,12 @@ use App\Modules\Files\Delivery\StoredFileResponse;
 use App\Modules\Files\Models\Category;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\ShareLink;
+use App\Modules\Files\Notifications\ShareLinkVerificationCodeNotification;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 
@@ -57,6 +59,16 @@ class PublicShareController extends Controller
             return Inertia::render('share/show', ['status' => 'limit_reached']);
         }
 
+        if (! $this->hasEmailAccess($request, $shareLink)) {
+            $requested = $request->session()->get($this->emailChallengeKey($shareLink)) === true;
+
+            return Inertia::render('share/show', [
+                'status' => $requested ? 'code_required' : 'email_required',
+                'request_code_url' => route('share.request-code', $token),
+                'verify_code_url' => route('share.verify-code', $token),
+            ]);
+        }
+
         if (! $this->hasPasswordAccess($request, $shareLink)) {
             return Inertia::render('share/show', [
                 'status' => 'password_required',
@@ -81,6 +93,49 @@ class PublicShareController extends Controller
             ],
             'download_url' => route('share.download', $token),
         ]);
+    }
+
+    public function requestCode(Request $request, string $token): RedirectResponse
+    {
+        $shareLink = ShareLink::query()->where('token', $token)->first();
+        $validated = $request->validate(['email' => ['required', 'email:rfc', 'max:255']]);
+
+        if ($shareLink !== null && $shareLink->isActive() && $shareLink->isEmailBound()
+            && hash_equals((string) $shareLink->recipient_email, strtolower(trim($validated['email'])))) {
+            $code = (string) random_int(100000, 999999);
+            $shareLink->forceFill([
+                'verification_code_hash' => Hash::make($code),
+                'verification_expires_at' => now()->addMinutes(10),
+            ])->save();
+            Notification::route('mail', (string) $shareLink->recipient_email)
+                ->notify(new ShareLinkVerificationCodeNotification($code));
+        }
+
+        // Do not disclose whether an address is the intended recipient.
+        if ($shareLink !== null) {
+            $request->session()->put($this->emailChallengeKey($shareLink), true);
+        }
+
+        return redirect()->route('share.show', $token)
+            ->with('success', __('If that address matches this link, a code has been sent.'));
+    }
+
+    public function verifyCode(Request $request, string $token): RedirectResponse
+    {
+        $shareLink = ShareLink::query()->where('token', $token)->first();
+        $validated = $request->validate(['code' => ['required', 'digits:6']]);
+
+        if ($shareLink === null || $shareLink->verification_code_hash === null
+            || $shareLink->verification_expires_at?->isPast() !== false
+            || ! Hash::check($validated['code'], $shareLink->verification_code_hash)) {
+            return back()->withErrors(['code' => __('That code is invalid or has expired.')]);
+        }
+
+        $shareLink->forceFill(['verification_code_hash' => null, 'verification_expires_at' => null])->save();
+        $request->session()->put($this->emailSessionKey($shareLink), true);
+        $request->session()->forget($this->emailChallengeKey($shareLink));
+
+        return redirect()->route('share.show', $token);
     }
 
     public function unlock(Request $request, string $token): RedirectResponse
@@ -108,7 +163,7 @@ class PublicShareController extends Controller
         $file = $shareLink?->shareable;
 
         if ($shareLink === null || ! $file instanceof File || $shareLink->isExpired() || $file->isExpired()
-            || ! $this->hasPasswordAccess($request, $shareLink)) {
+            || ! $this->hasPasswordAccess($request, $shareLink) || ! $this->hasEmailAccess($request, $shareLink)) {
             return redirect()->route('share.show', $token);
         }
 
@@ -143,5 +198,21 @@ class PublicShareController extends Controller
     private function passwordSessionKey(ShareLink $shareLink): string
     {
         return 'share_link_unlocked.'.$shareLink->id;
+    }
+
+    private function hasEmailAccess(Request $request, ShareLink $shareLink): bool
+    {
+        return ! $shareLink->isEmailBound()
+            || $request->session()->get($this->emailSessionKey($shareLink)) === true;
+    }
+
+    private function emailSessionKey(ShareLink $shareLink): string
+    {
+        return 'share_link_email_verified.'.$shareLink->id;
+    }
+
+    private function emailChallengeKey(ShareLink $shareLink): string
+    {
+        return 'share_link_email_challenge.'.$shareLink->id;
     }
 }

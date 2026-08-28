@@ -35,6 +35,11 @@ class FileAssignmentsController extends Controller
         private readonly FileSharing $sharing,
     ) {}
 
+    protected function assignmentScope(): StaffLibraryScope
+    {
+        return $this->scope;
+    }
+
     public function store(Request $request, File $file): FileResource
     {
         Gate::authorize('update', $file);

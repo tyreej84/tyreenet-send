@@ -17,6 +17,9 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $token
  * @property string|null $password_hash
+ * @property string|null $recipient_email
+ * @property string|null $verification_code_hash
+ * @property Carbon|null $verification_expires_at
  * @property int|null $created_by
  * @property Carbon|null $expires_at
  * @property int|null $max_downloads
@@ -30,6 +33,7 @@ class ShareLink extends Model
     {
         return [
             'expires_at' => 'datetime',
+            'verification_expires_at' => 'datetime',
         ];
     }
 
@@ -59,5 +63,10 @@ class ShareLink extends Model
     public function isPasswordProtected(): bool
     {
         return $this->password_hash !== null;
+    }
+
+    public function isEmailBound(): bool
+    {
+        return $this->recipient_email !== null;
     }
 }

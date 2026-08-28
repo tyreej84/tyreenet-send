@@ -8,10 +8,12 @@ use App\Modules\Audit\ActivityLog;
 use App\Modules\Files\Models\Category;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\ShareLink;
+use App\Modules\Files\Notifications\ShareLinkVerificationCodeNotification;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Models\RolePermission;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 
@@ -193,6 +195,38 @@ test('a password-protected share link cannot be viewed or downloaded until it is
     $this->get("/s/{$link->token}")->assertInertia(fn (AssertableInertia $page) => $page->where('status', 'active'));
     $this->get("/s/{$link->token}/download")->assertOk();
     expect($link->refresh()->downloads_count)->toBe(1);
+});
+
+test('an email-bound share link requires a one-time code sent only to its recipient', function () {
+    Notification::fake();
+    $file = shareTestFile($this->admin);
+
+    $this->actingAs($this->admin)->post("/files/{$file->id}/share-links", [
+        'recipient_email' => 'Recipient@Example.com',
+    ])->assertRedirect();
+    auth()->logout();
+
+    $link = ShareLink::query()->sole();
+    expect($link->recipient_email)->toBe('recipient@example.com');
+    $this->get("/s/{$link->token}")->assertInertia(fn (AssertableInertia $page) => $page->where('status', 'email_required'));
+    $this->get("/s/{$link->token}/download")->assertRedirect();
+
+    $this->post("/s/{$link->token}/request-code", ['email' => 'wrong@example.com'])->assertRedirect();
+    Notification::assertNothingSent();
+
+    $this->post("/s/{$link->token}/request-code", ['email' => 'recipient@example.com'])->assertRedirect();
+    $code = null;
+    Notification::assertSentOnDemand(ShareLinkVerificationCodeNotification::class, function ($notification) use (&$code): bool {
+        $code = $notification->code;
+
+        return true;
+    });
+    expect($code)->toMatch('/^\d{6}$/');
+
+    $this->post("/s/{$link->token}/verify-code", ['code' => '000000'])->assertSessionHasErrors('code');
+    $this->post("/s/{$link->token}/verify-code", ['code' => $code])->assertRedirect();
+    $this->get("/s/{$link->token}")->assertInertia(fn (AssertableInertia $page) => $page->where('status', 'active'));
+    $this->get("/s/{$link->token}/download")->assertOk();
 });
 
 test('a share link to an externally stored file hands out a presigned url, not an nginx path', function () {

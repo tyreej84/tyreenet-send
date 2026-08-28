@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\User;
+use App\Modules\Identity\Http\Responses\PasskeyLoginResponse;
 use App\Modules\Identity\Passwords\PasswordPolicy;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Passkeys\Passkeys;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -13,7 +16,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\Laravel\Passkeys\Contracts\PasskeyLoginResponse::class, PasskeyLoginResponse::class);
     }
 
     /**
@@ -30,5 +33,9 @@ class AppServiceProvider extends ServiceProvider
         // time, not here, so the policy can read settings out of the database
         // without this provider needing one at boot.
         Password::defaults(fn (): Password => $this->app->make(PasswordPolicy::class)->rule());
+
+        Passkeys::authorizeLoginUsing(
+            fn ($request, $user): bool => $user instanceof User && $user->active && ! $user->account_requested,
+        );
     }
 }

@@ -57,6 +57,11 @@ class FileShareDigestNotification extends Notification implements ShouldQueue
                 : __('File: :name', ['name' => $item->subject_name]));
         }
 
+        $customMessages = collect($this->items)->pluck('context.message')->filter(fn ($value): bool => is_string($value) && $value !== '')->unique();
+        foreach ($customMessages as $customMessage) {
+            $message->line((string) $customMessage);
+        }
+
         return $message->action(__('View your files'), route('my-files.index'));
     }
 }

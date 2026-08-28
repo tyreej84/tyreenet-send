@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Modules\Files\Models\ShareMessageTemplate;
 use App\Modules\Groups\Models\Group;
 use App\Modules\Identity\AuthSource;
 use App\Modules\Identity\Models\Role;
@@ -13,14 +14,20 @@ use Illuminate\Contracts\Translation\HasLocalePreference;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Laravel\Passkeys\Contracts\PasskeyUser;
+use Laravel\Passkeys\PasskeyAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property UserType $type
+ * @property int $id
+ * @property string $name
+ * @property string $email
  * @property AuthSource $auth_source
  * @property string|null $ldap_dn
  * @property Carbon|null $ldap_synced_at
@@ -32,12 +39,13 @@ use Laravel\Sanctum\HasApiTokens;
  * @property int|null $dashboard_columns
  * @property int $storage_quota_mb
  * @property Carbon|null $erase_after
+ * @property Carbon|null $two_factor_confirmed_at
  * @property-read Role|null $role
  */
-class User extends Authenticatable implements HasLocalePreference
+class User extends Authenticatable implements HasLocalePreference, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, SoftDeletes;
 
     /**
      * The attributes that are mass assignable.
@@ -74,6 +82,12 @@ class User extends Authenticatable implements HasLocalePreference
     public function memberOfGroups(): BelongsToMany
     {
         return $this->belongsToMany(Group::class, 'group_members')->withTimestamps();
+    }
+
+    /** @return HasMany<ShareMessageTemplate, $this> */
+    public function shareMessageTemplates(): HasMany
+    {
+        return $this->hasMany(ShareMessageTemplate::class);
     }
 
     /**

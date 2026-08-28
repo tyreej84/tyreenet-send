@@ -9,6 +9,7 @@ use App\Modules\Files\Http\Controllers\UploadSettingsController;
 use App\Modules\Identity\Http\Controllers\ApiTokensController;
 use App\Modules\Identity\Http\Controllers\ConnectedAccountsController;
 use App\Modules\Identity\Http\Controllers\LdapSettingsController;
+use App\Modules\Identity\Http\Controllers\PasskeysController;
 use App\Modules\Identity\Http\Controllers\SecuritySettingsController;
 use App\Modules\Identity\Http\Controllers\SocialLoginController;
 use App\Modules\Identity\Http\Controllers\SocialLoginSettingsController;
@@ -50,6 +51,7 @@ Route::middleware('auth')->group(function () {
     Route::put('settings/password', [PasswordController::class, 'update'])->name('password.update');
 
     Route::get('settings/two-factor', [TwoFactorEnrollmentController::class, 'show'])->name('two-factor.show');
+    Route::get('settings/passkeys', [PasskeysController::class, 'index'])->name('passkeys.index');
 
     // Staff and clients alike: which providers you have connected is a
     // property of your account, not of your role.

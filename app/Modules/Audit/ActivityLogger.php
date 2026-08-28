@@ -39,7 +39,7 @@ class ActivityLogger
         $token = $user?->currentAccessToken();
         [$origin, $credentialName] = $this->originFor($user, $token);
 
-        ActivityLog::query()->create([
+        $entry = ActivityLog::query()->create([
             'actor_id' => $user?->getKey(),
             'actor_name' => $user?->name,
             'actor_type' => $user?->type->value,
@@ -59,6 +59,8 @@ class ActivityLogger
             'ip_address' => $this->shouldRecordIp($action, $user) ? request()->ip() : null,
             'created_at' => now(),
         ]);
+
+        app(SecurityAlertMonitor::class)->inspect($entry);
     }
 
     /**

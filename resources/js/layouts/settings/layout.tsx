@@ -28,6 +28,11 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             icon: null,
         },
         {
+            title: t('Passkeys'),
+            url: '/settings/passkeys',
+            icon: null,
+        },
+        {
             title: t('Notifications'),
             url: '/settings/notifications',
             icon: null,

@@ -15,6 +15,7 @@ use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\DownloadLimitScope;
 use App\Modules\Files\Models\Category;
 use App\Modules\Files\Models\File;
+use App\Modules\Files\Models\FileAssignment;
 use App\Modules\Files\Models\Folder;
 use App\Modules\Files\Models\ShareLink;
 use App\Modules\Files\Storage\ResolvingUploadDisk;
@@ -22,6 +23,8 @@ use App\Modules\Files\Uploads\StoreUploadedFile;
 use App\Modules\Files\Uploads\UploadExtensionPolicy;
 use App\Modules\Files\Versions\FileVersionLinks;
 use App\Modules\Files\Versions\FileVersions;
+use App\Modules\Groups\Models\Group;
+use App\Modules\Identity\UserType;
 use App\Modules\Platform\Localization\LocalDay;
 use App\Modules\Platform\Localization\TimezoneRegistry;
 use App\Modules\Platform\Settings\Setting;
@@ -60,10 +63,31 @@ class FilesController extends Controller
         $user = $request->user();
         assert($user !== null);
 
+        $clientIds = $this->scope->assignableClientIds($user);
+        $groupIds = $this->scope->assignableGroupIds($user);
+        $clients = User::query()->where('type', UserType::Client)->when($clientIds !== null, fn ($query) => $query->whereIn('id', $clientIds))->orderBy('name')->get(['id', 'name']);
+        $groups = Group::query()->when($groupIds !== null, fn ($query) => $query->whereIn('id', $groupIds))->orderBy('name')->get(['id', 'name']);
+        $recent = FileAssignment::query()->whereHas('file', fn ($query) => $query->where('uploaded_by', $user->id))
+            ->latest()->limit(30)->get()->unique(fn (FileAssignment $assignment): string => $assignment->assignable_type.':'.$assignment->assignable_id)
+            ->take(6)->map(function (FileAssignment $assignment): ?array {
+                $target = $assignment->assignable;
+                if (! $target instanceof User && ! $target instanceof Group) {
+                    return null;
+                }
+
+                return ['type' => $target instanceof Group ? 'group' : 'client', 'id' => (int) $target->getKey(), 'name' => (string) $target->getAttribute('name')];
+            })->filter()->values();
+
         return Inertia::render('files/create', [
             'max_file_size_mb' => app(Settings::class)->get(Setting::MaxFileSizeMb),
             'part_size_mb' => (int) config('projectsend.upload_part_size_mb'),
             'allowed_extensions' => app(UploadExtensionPolicy::class)->hintFor($user),
+            'clients' => $clients,
+            'groups' => $groups,
+            'recent_targets' => $recent,
+            'message_templates' => $user->shareMessageTemplates()->orderBy('name')->get(['id', 'name', 'body']),
+            'send_url' => route('files.assignments.bulk-store', absolute: false),
+            'template_store_url' => route('share-message-templates.store', absolute: false),
         ]);
     }
 
@@ -227,6 +251,7 @@ class FilesController extends Controller
                     'expires_at' => $link->expires_at?->toIso8601String(),
                     'max_downloads' => $link->max_downloads,
                     'password_protected' => $link->isPasswordProtected(),
+                    'recipient_email' => $link->recipient_email,
                     'downloads_count' => $link->downloads_count,
                     'revoke_url' => route('share-links.destroy', $link, false),
                 ])->values(),

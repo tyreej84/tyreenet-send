@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Files\Http\Controllers\Concerns;
 
 use App\Models\User;
+use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\Models\File;
 use App\Modules\Groups\Models\Group;
 use Illuminate\Http\Request;
@@ -22,6 +23,8 @@ use Illuminate\Validation\ValidationException;
  */
 trait ResolvesShareTargets
 {
+    abstract protected function assignmentScope(): StaffLibraryScope;
+
     /**
      * Validate the request, resolve the named target, and check the caller
      * may share with it — in that order, since the guard needs the resolved
@@ -108,8 +111,8 @@ trait ResolvesShareTargets
         }
 
         $allowed = $assignable instanceof Group
-            ? $this->scope->canAssignGroup($user, $assignable)
-            : $this->scope->canAssignClient($user, $assignable);
+            ? $this->assignmentScope()->canAssignGroup($user, $assignable)
+            : $this->assignmentScope()->canAssignClient($user, $assignable);
 
         if (! $allowed) {
             throw ValidationException::withMessages(['id' => __('You can only share with the clients assigned to you.')]);

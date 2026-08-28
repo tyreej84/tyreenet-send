@@ -41,7 +41,7 @@ class FileSharing
      * Idempotent: assigning a file to the same target twice is a no-op for
      * the row, which matters for an API caller retrying a request.
      */
-    public function assign(File $file, User|Group $assignable, string $targetName): void
+    public function assign(File $file, User|Group $assignable, string $targetName, ?string $message = null): void
     {
         FileAssignment::query()->firstOrCreate([
             'file_id' => $file->id,
@@ -57,7 +57,7 @@ class FileSharing
 
         // The master switch and each recipient's own preference are the
         // digester's job now — every caller was repeating them.
-        $this->digester->queue('file_shared', $recipients, $file->name, ['is_folder' => false]);
+        $this->digester->queue('file_shared', $recipients, $file->name, ['is_folder' => false, 'message' => $message]);
     }
 
     /**

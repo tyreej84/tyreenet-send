@@ -46,6 +46,7 @@ class ShareLinksController extends Controller
             'expires_at' => ['nullable', 'date'],
             'max_downloads' => ['nullable', 'integer', 'min:1'],
             'password' => ['nullable', 'string', 'min:8', 'max:255'],
+            'recipient_email' => ['nullable', 'email:rfc', 'max:255'],
             // A custom token is optional — leave blank for a random one,
             // same as before. Must not collide with the file's own
             // public slug: the two live in different URL namespaces
@@ -87,6 +88,7 @@ class ShareLinksController extends Controller
             'shareable_id' => $file->id,
             'token' => $validated['token'] ?? Str::random(32),
             'password_hash' => filled($validated['password'] ?? null) ? Hash::make($validated['password']) : null,
+            'recipient_email' => filled($validated['recipient_email'] ?? null) ? Str::lower(trim($validated['recipient_email'])) : null,
             'created_by' => $user->id,
             'expires_at' => $user->can('set_file_expiration_date') ? $expiresAt : null,
             'max_downloads' => $user->can('limit_downloads') ? $validated['max_downloads'] ?? null : null,

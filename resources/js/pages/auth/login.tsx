@@ -1,5 +1,6 @@
 import { Head, useForm, usePage } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
+import { usePasskeyVerify } from '@laravel/passkeys/react';
+import { KeyRound, LoaderCircle } from 'lucide-react';
 import { FormEventHandler, useRef } from 'react';
 
 import { CaptchaWidget, type CaptchaHandle } from '@/components/captcha-widget';
@@ -33,6 +34,10 @@ export default function Login({ status, canResetPassword, canRegister }: LoginPr
     const { flash } = usePage<SharedData>().props;
     const captcha = useRef<CaptchaHandle>(null);
     const captchaToken = useRef<string | null>(null);
+    const passkey = usePasskeyVerify({
+        autofill: true,
+        onSuccess: (response) => window.location.assign(response.redirect ?? '/dashboard'),
+    });
 
     const { data, setData, post, processing, errors, reset, transform } = useForm<LoginForm>({
         email: '',
@@ -82,7 +87,7 @@ export default function Login({ status, canResetPassword, canRegister }: LoginPr
                             required
                             autoFocus
                             tabIndex={1}
-                            autoComplete="email"
+                            autoComplete="email webauthn"
                             value={data.email}
                             onChange={(e) => setData('email', e.target.value)}
                             placeholder="email@example.com"
@@ -132,6 +137,14 @@ export default function Login({ status, canResetPassword, canRegister }: LoginPr
                 </div>
 
                 <SocialLoginButtons />
+
+                {passkey.isSupported && (
+                    <Button type="button" variant="outline" className="w-full" disabled={passkey.isLoading} onClick={() => passkey.verify()}>
+                        {passkey.isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                        {t('Sign in with a passkey')}
+                    </Button>
+                )}
+                {passkey.error && <InputError message={passkey.error} />}
 
                 {canRegister && (
                     <div className="text-muted-foreground text-center text-sm">

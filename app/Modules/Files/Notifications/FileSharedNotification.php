@@ -29,11 +29,14 @@ class FileSharedNotification extends Notification implements ShouldQueue
     public function __construct(
         private readonly string $itemName,
         private readonly bool $isFolder,
+        private readonly ?string $message = null,
     ) {}
 
     public static function from(PendingNotification $item): self
     {
-        return new self($item->subject_name, (bool) ($item->context['is_folder'] ?? false));
+        $message = $item->context['message'] ?? null;
+
+        return new self($item->subject_name, (bool) ($item->context['is_folder'] ?? false), is_string($message) ? $message : null);
     }
 
     /**
@@ -58,9 +61,14 @@ class FileSharedNotification extends Notification implements ShouldQueue
             ? __('The folder ":name" is ready for you in TyreeNet Send.', ['name' => $this->itemName])
             : __('The file ":name" is ready for you in TyreeNet Send.', ['name' => $this->itemName]);
 
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject($subject)
-            ->line($line)
-            ->action(__('View files shared with me'), route('my-files.index'));
+            ->line($line);
+
+        if ($this->message !== null && $this->message !== '') {
+            $mail->line($this->message);
+        }
+
+        return $mail->action(__('View files shared with me'), route('my-files.index'));
     }
 }

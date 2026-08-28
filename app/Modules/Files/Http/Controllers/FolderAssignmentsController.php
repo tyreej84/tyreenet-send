@@ -32,6 +32,11 @@ class FolderAssignmentsController extends Controller
         private readonly Notifier $notifier,
     ) {}
 
+    protected function assignmentScope(): StaffLibraryScope
+    {
+        return $this->scope;
+    }
+
     public function store(Request $request, Folder $folder): RedirectResponse
     {
         Gate::authorize('update', $folder);

@@ -72,6 +72,8 @@ Route::get('setup/success', [SetupController::class, 'success'])->name('setup.su
 // visitor out of the two-factor challenge and of password reset.
 Route::get('s/{token}', [PublicShareController::class, 'show'])->middleware('throttle:30,1,share-link')->name('share.show');
 Route::post('s/{token}/unlock', [PublicShareController::class, 'unlock'])->middleware('throttle:10,1,share-link-unlock')->name('share.unlock');
+Route::post('s/{token}/request-code', [PublicShareController::class, 'requestCode'])->middleware('throttle:5,1,share-link-code')->name('share.request-code');
+Route::post('s/{token}/verify-code', [PublicShareController::class, 'verifyCode'])->middleware('throttle:10,1,share-link-code')->name('share.verify-code');
 Route::get('s/{token}/download', [PublicShareController::class, 'download'])->middleware('throttle:30,1,share-link')->name('share.download');
 
 Route::middleware(['auth'])->group(function () {
@@ -136,6 +138,9 @@ Route::middleware(['auth'])->group(function () {
     Route::patch('files/{file}/move', [FilesController::class, 'move'])->middleware('staff')->name('files.move');
     Route::delete('files/{file}', [FilesController::class, 'destroy'])->middleware('staff')->name('files.destroy');
     Route::post('files/{file}/assignments', [FileAssignmentsController::class, 'store'])->middleware('staff')->name('files.assignments.store');
+    Route::post('file-assignments/bulk', [FileAssignmentsController::class, 'bulkStore'])->middleware('staff')->name('files.assignments.bulk-store');
+    Route::post('share-message-templates', [\App\Modules\Files\Http\Controllers\ShareMessageTemplatesController::class, 'store'])->middleware('staff')->name('share-message-templates.store');
+    Route::delete('share-message-templates/{template}', [\App\Modules\Files\Http\Controllers\ShareMessageTemplatesController::class, 'destroy'])->middleware('staff')->name('share-message-templates.destroy');
     Route::delete('files/{file}/assignments', [FileAssignmentsController::class, 'destroy'])->middleware('staff')->name('files.assignments.destroy');
     Route::get('files/{file}/version-candidates', [FileVersionsController::class, 'candidates'])->middleware('staff')->name('files.version.candidates');
     Route::get('files/{file}/version-preview', [FileVersionsController::class, 'preview'])->middleware('staff')->name('files.version.preview');
