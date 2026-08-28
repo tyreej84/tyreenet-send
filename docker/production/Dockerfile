@@ -16,7 +16,7 @@
 # reproduced the config exactly. An external MySQL and Redis are still
 # expected; see compose.example.yaml.
 
-FROM php:8.4-fpm-alpine
+FROM php:8.5-fpm-alpine
 
 LABEL org.opencontainers.image.title="TyreeNet Send" \
       org.opencontainers.image.description="TyreeNet's customized ProjectSend file-delivery service" \
