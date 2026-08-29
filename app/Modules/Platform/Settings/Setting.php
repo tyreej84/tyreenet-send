@@ -107,6 +107,13 @@ enum Setting: string
     // comment (0 disables editing entirely).
     case CommentsEditWindowMinutes = 'comments_edit_window_minutes';
 
+    // Largest zip download that can be asked for, in MB (0 = unlimited).
+    // The cap is on total size rather than on file count because bytes are
+    // what a build actually costs — worker time, the temp copies a remote
+    // disk needs, and the archive itself. The file count has its own,
+    // deliberately fixed, rail in ZipDownloadsController::MAX_FILES.
+    case MaxZipDownloadSizeMb = 'max_zip_download_size_mb';
+
     // Whether a download's IP is recorded in the activity log (all |
     // anonymous_only | none). Only affects Action::FileDownloaded /
     // ShareLinkDownloaded entries — see ActivityLogger::shouldRecordIp().
@@ -130,9 +137,9 @@ enum Setting: string
     case FailedJobRetentionDays = 'failed_job_retention_days';
     case NotificationRetentionDays = 'notification_retention_days';
 
-    // How many days a self-deleted account is retained (soft-deleted)
-    // before PurgeErasuresCommand permanently erases it. Consumed by
-    // ProfileController.
+    // How many days a deleted account is retained (soft-deleted) before
+    // PurgeErasuresCommand permanently erases it. Consumed by
+    // ErasureSchedule, which every deletion path calls.
     case AccountErasureGraceDays = 'account_erasure_grace_days';
 
     // What the unattended erasure does with the files and folders a purged
@@ -374,6 +381,7 @@ enum Setting: string
             self::ClientsAutoGroup,
             self::ClientsMembershipDenyCooldownDays,
             self::MaxFileSizeMb,
+            self::MaxZipDownloadSizeMb,
             self::DefaultClientStorageQuotaMb,
             self::AccountErasureGraceDays,
             self::AccountErasureReassignTo,
@@ -442,6 +450,7 @@ enum Setting: string
             self::ClientsAutoGroup => 0,
             self::ClientsMembershipDenyCooldownDays => 30,
             self::MaxFileSizeMb => 1024,
+            self::MaxZipDownloadSizeMb => 2048,
             self::DefaultClientStorageQuotaMb => 0,
             self::AccountErasureGraceDays => 30,
             self::AccountErasureReassignTo => 0,

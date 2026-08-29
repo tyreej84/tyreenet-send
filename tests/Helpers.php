@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Models\User;
+use App\Modules\Audit\ActivityLogger;
+use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Files\Folders\FolderService;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\FileAssignment;
@@ -10,14 +12,19 @@ use App\Modules\Files\Models\Folder;
 use App\Modules\Groups\Models\Group;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Models\RolePermission;
+use App\Modules\Identity\Permissions\EnsureSystemRoles;
 use App\Modules\Identity\Permissions\PermissionChecker;
 use App\Modules\Platform\Settings\ExternalStorageConfigApplier;
 use App\Modules\Platform\Settings\ExternalStorageSettings;
+use App\Modules\Platform\Settings\Settings;
+use App\Modules\Platform\Updates\UpdateInstallation;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
+use Tests\Support\RecordingUpdate;
 
 /*
 |--------------------------------------------------------------------------
@@ -257,4 +264,55 @@ function fakeIdToken(string $email = 'portal@example.test'): string
     $encode = fn (array $claims): string => rtrim(strtr(base64_encode((string) json_encode($claims)), '+/', '-_'), '=');
 
     return $encode(['alg' => 'none']).'.'.$encode(['preferred_username' => $email]).'.sig';
+}
+
+/**
+ * Bind a DeletedAccountContent double that reports content to dispose of (so
+ * a delete demands a choice) and then throws while carrying that choice out.
+ * Lets the account-deletion tests prove the destroy() controllers roll their
+ * soft-delete back when the content step fails, rather than stranding a
+ * deleted account whose files still point at it.
+ */
+function failAccountContentDisposal(): void
+{
+    app()->instance(DeletedAccountContent::class, new class extends DeletedAccountContent
+    {
+        public function summarize(User $user): array
+        {
+            return ['files' => 1, 'folders' => 0];
+        }
+
+        public function reassignTo(User $from, User $to): array
+        {
+            throw new RuntimeException('content reassignment failed');
+        }
+    });
+}
+
+/**
+ * Swap the update in for one that records its artisan calls instead of
+ * running them, and return it.
+ *
+ * Used by every test that runs `projectsend:update`, in more than one file
+ * — see the class for why running the real commands is not an option in a
+ * parallel suite.
+ *
+ * @param  array{route?: bool, event?: bool, config?: bool}  $warm
+ * @param  array<string, int>  $exitCodes
+ */
+function recordingUpdate(array $warm = [], array $exitCodes = []): RecordingUpdate
+{
+    $fake = new RecordingUpdate(
+        app(Application::class),
+        app(EnsureSystemRoles::class),
+        app(Settings::class),
+        app(ActivityLogger::class),
+    );
+
+    $fake->warm = [...$fake->warm, ...$warm];
+    $fake->exitCodes = $exitCodes;
+
+    app()->instance(UpdateInstallation::class, $fake);
+
+    return $fake;
 }

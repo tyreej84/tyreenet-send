@@ -19,7 +19,14 @@ namespace App\Modules\Platform\Capabilities;
  */
 enum Capability: string
 {
-    // Community-only — cut where the installation is managed for you.
+    // Both editions. It was Community-only while a managed installation's
+    // staff accounts were expected to be created from outside — but a
+    // platform does not know whether Alice should be an Account Manager,
+    // any more than it knows where her files go when she leaves, and the
+    // seat count it does own is enforced by PROJECTSEND_PLATFORM_MAX_STAFF_USERS
+    // rather than by closing the screen. Capacity is the platform's; who
+    // fills it is the tenant's. Same division managed storage already uses:
+    // the bucket is provisioned, what goes in it is not.
     case UsersManage = 'users.manage';
     case StorageConfigure = 'storage.configure';
     case EmailTransportConfigure = 'email.transport.configure';
@@ -66,6 +73,27 @@ enum Capability: string
     // package is installed, not a flag an installation can set. Present
     // in this enum even so, because a package cannot extend a closed one
     // — core has to publish the key before anything can gate on it.
+    // Cloud-only — marks an installation that a platform provisioned and
+    // looks after, for the screens that have to know the difference.
+    //
+    // It does not close the tenant's own /users screens. It used to say
+    // so, and that stopped being true when UsersManage opened on both
+    // editions: a platform sells the seats, the tenant decides who sits
+    // in them. Capacity is the platform's, and it arrives as
+    // PROJECTSEND_PLATFORM_MAX_STAFF_USERS rather than as a shut door.
+    //
+    // The seat *number* deliberately does not live here. There are no
+    // billing or plan tiers in this application to key off — the same
+    // reason config/api.php gives for not inventing an installation-level
+    // rate limit — so the limit arrives from the environment and this
+    // capability only says who is in charge.
+    //
+    // Declared before the module that implements it exists, and that is
+    // the point: a capability added after a release is invisible to every
+    // image built from one, which is exactly how StorageManaged came to
+    // sit unusable for a fleet that had everything else in place.
+    case PlatformManaged = 'platform.managed';
+
     case AiConnector = 'ai.connector';
 
     /**
@@ -74,16 +102,18 @@ enum Capability: string
     public function editions(): array
     {
         return match ($this) {
-            self::UsersManage,
             self::StorageConfigure,
             self::EmailTransportConfigure,
             self::SystemUpdates,
             self::SchedulerMonitoring,
             self::CustomAssets => [Edition::Community],
 
+            self::UsersManage => [Edition::Community, Edition::Cloud],
+
             self::Branding,
             self::StorageManaged,
             self::CaptchaManagedKeys,
+            self::PlatformManaged,
             self::AiConnector => [Edition::Cloud],
         };
     }

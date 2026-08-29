@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Files;
 
+use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\Folder;
 use App\Modules\Files\Notifications\FileShareDigestNotification;
@@ -28,6 +29,14 @@ class FilesServiceProvider extends ServiceProvider
         $this->app->bind(MalwareScanner::class, fn () => config('malware.enabled')
             ? new ClamAvMalwareScanner
             : new NullMalwareScanner);
+
+        // Scoped rather than transient: the library query it builds costs
+        // several lookups per assigned client, and the policies ask for it
+        // once per row on a listing — Gate resolves a fresh policy for
+        // every check, so without this the instance memo would never be
+        // reached twice. Scoped rather than a singleton so a long-lived
+        // queue worker starts each job with an empty memo.
+        $this->app->scoped(StaffLibraryScope::class);
     }
 
     public function boot(): void

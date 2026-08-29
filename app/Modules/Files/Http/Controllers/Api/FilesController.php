@@ -12,6 +12,7 @@ use App\Modules\Audit\ActivityLogger;
 use App\Modules\Clients\ClientStorageUsage;
 use App\Modules\Comments\CommentingRules;
 use App\Modules\Comments\CommentScope;
+use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\Access\ViewableFileScope;
 use App\Modules\Files\DownloadLimitScope;
 use App\Modules\Files\Http\Resources\Api\FileResource;
@@ -57,6 +58,7 @@ class FilesController extends Controller
         private readonly ClientStorageUsage $storageUsage,
         private readonly ActivityLogger $activity,
         private readonly CommentingRules $commenting,
+        private readonly StaffLibraryScope $scope,
     ) {}
 
     /**
@@ -174,7 +176,7 @@ class FilesController extends Controller
             'file' => ['required', 'file'],
             'name' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
         ]);
 
         /** @var UploadedFile $upload */
@@ -275,7 +277,7 @@ class FilesController extends Controller
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
-            'folder_id' => ['sometimes', 'nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => ['sometimes', ...Rules::folderId()],
             'public' => ['sometimes', 'boolean'],
             'commentable' => ['sometimes', 'boolean'],
             'slug' => Rules::slug('files', $file->id),
@@ -285,6 +287,21 @@ class FilesController extends Controller
             'download_limit' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'download_limit_scope' => ['sometimes', Rule::enum(DownloadLimitScope::class)],
         ]);
+
+        // Reparenting through update() must respect the same library scope as
+        // the web move()/bulkUpdate() paths: the destination folder must be
+        // one this user can see. Only enforced when folder_id actually
+        // changes, so re-saving a file that already sits in an out-of-scope
+        // folder (reachable via a direct client share) still works. The
+        // integer rule admits numeric strings, so cast before the strict
+        // change comparison.
+        if (array_key_exists('folder_id', $validated) && $validated['folder_id'] !== null) {
+            $validated['folder_id'] = (int) $validated['folder_id'];
+
+            if ($validated['folder_id'] !== $file->folder_id) {
+                $this->scope->folders($user)->findOrFail($validated['folder_id']);
+            }
+        }
 
         $attributes = array_intersect_key($validated, array_flip(['name', 'description', 'folder_id']));
 

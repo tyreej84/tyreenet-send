@@ -199,7 +199,12 @@ Route::middleware(['auth'])->group(function () {
     // Zip downloads: reachable by both staff and clients, same as
     // files.download above — authorization happens per-item inside the
     // controller, not via route middleware.
-    Route::post('zip-downloads', [ZipDownloadsController::class, 'store'])->name('zip-downloads.store');
+    // Named bucket, as every throttle in this app must be: a bare
+    // `throttle:` keys on sha1(domain|ip) and would share one counter with
+    // every other bare throttle rather than with this route.
+    Route::post('zip-downloads', [ZipDownloadsController::class, 'store'])
+        ->middleware('throttle:10,1,zip-downloads')
+        ->name('zip-downloads.store');
     Route::get('zip-downloads/{zipDownload}', [ZipDownloadsController::class, 'show'])->name('zip-downloads.show');
     Route::get('zip-downloads/{zipDownload}/download', [ZipDownloadsController::class, 'download'])->name('zip-downloads.download');
 
@@ -296,9 +301,11 @@ Route::middleware(['auth'])->group(function () {
         Route::delete('account-requests/{client}', [AccountRequestsController::class, 'deny'])->name('account-requests.deny');
     });
 
-    // Staff user & role management is community-only (managed installations
-    // handle it outside the application) — both layers gate it:
-    // capability + permission.
+    // Staff user & role management: both editions since 2.2.0, and still
+    // gated by both layers — capability + permission. The capability is
+    // the seam an edition difference would travel through, and cloud
+    // holds it (see Capability::UsersManage); the seat cap, not a closed
+    // screen, is what a managed plan limits.
     Route::middleware(['staff', 'capability:users.manage', 'can:manage_users'])->group(function () {
         Route::get('users', [UsersController::class, 'index'])->name('users.index');
         Route::get('users/create', [UsersController::class, 'create'])->middleware('can:create_users')->name('users.create');

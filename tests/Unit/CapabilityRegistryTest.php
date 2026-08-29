@@ -31,8 +31,11 @@ test('cloud edition has cloud exclusives and none of the community-only capabili
     $registry = new CapabilityRegistry(Edition::Cloud);
 
     expect($registry->has(Capability::Branding))->toBeTrue()
+        ->and($registry->has(Capability::PlatformManaged))->toBeTrue()
+        // Both editions since 2.2.0: a platform provisions seats, it does
+        // not decide who fills them. See the case's own comment.
+        ->and($registry->has(Capability::UsersManage))->toBeTrue()
         ->and($registry->has(Capability::StorageManaged))->toBeTrue()
-        ->and($registry->has(Capability::UsersManage))->toBeFalse()
         ->and($registry->has(Capability::StorageConfigure))->toBeFalse()
         ->and($registry->has(Capability::EmailTransportConfigure))->toBeFalse()
         ->and($registry->has(Capability::SystemUpdates))->toBeFalse()
@@ -43,5 +46,14 @@ test('cloud edition has cloud exclusives and none of the community-only capabili
 test('enabledKeys returns the string keys of enabled capabilities', function () {
     $registry = new CapabilityRegistry(Edition::Cloud);
 
-    expect($registry->enabledKeys())->toBe(['branding.customize', 'storage.managed', 'captcha.managed_keys', 'ai.connector']);
+    // Order follows the enum, which is the order the control plane reads
+    // them in — see GET /platform/v1/status in cloud-modules.
+    expect($registry->enabledKeys())->toBe([
+        'users.manage',
+        'branding.customize',
+        'storage.managed',
+        'captcha.managed_keys',
+        'platform.managed',
+        'ai.connector',
+    ]);
 });

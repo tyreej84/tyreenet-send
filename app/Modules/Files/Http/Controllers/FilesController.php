@@ -100,7 +100,7 @@ class FilesController extends Controller
             'file' => ['required', 'file', 'max:102400'],
             'name' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
         ]);
 
         /** @var UploadedFile $upload */
@@ -116,6 +116,17 @@ class FilesController extends Controller
 
         $user = $request->user();
         assert($user !== null);
+
+        // The check the other two upload paths make and this one did not:
+        // a folder outside the uploader's library is not a place to put a
+        // file. Without it this route reached any folder on the
+        // installation, and File::scopeVisibleToClient then hands the file
+        // to whoever that folder's subtree is shared with.
+        $folder = isset($validated['folder_id'])
+            ? Folder::query()->whereKey($validated['folder_id'])->first()
+            : null;
+
+        abort_unless(Folder::uploadableBy($user, $folder), 403);
 
         if (! app(UploadExtensionPolicy::class)->isAllowed($user, $upload->getClientOriginalName())) {
             throw ValidationException::withMessages([
@@ -221,7 +232,11 @@ class FilesController extends Controller
                     'url' => route('files.edit', $member, false),
                     'is_current' => $member->id === $file->id,
                 ])->values(),
-            'folder_options' => Folder::query()->orderBy('path')->orderBy('name')->get()
+            // Narrowed like every other folder listing: an unscoped staff
+            // member gets the whole tree, a client-scoped one only their
+            // own. Unfiltered this handed a scoped staffer every folder
+            // name and id on the installation.
+            'folder_options' => $this->scope->folders($viewer)->orderBy('path')->orderBy('name')->get()
                 ->map(fn (Folder $folder): array => ['id' => $folder->id, 'name' => $folder->name])->all(),
             'categories' => Category::query()->orderBy('name')->get(['id', 'name', 'color'])
                 ->map(fn (Category $category): array => ['id' => $category->id, 'name' => $category->name, 'color' => $category->color])->all(),
@@ -268,7 +283,7 @@ class FilesController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
             'public' => ['sometimes', 'boolean'],
             'commentable' => ['sometimes', 'boolean'],
             // The slug only matters (and is only shown) once a file is
@@ -281,10 +296,25 @@ class FilesController extends Controller
             'download_limit_scope' => ['nullable', Rule::enum(DownloadLimitScope::class)],
         ]);
 
+        // The edit form posts folder_id as a string; cast so the strict
+        // change comparison below matches the model's int.
+        $folderId = isset($validated['folder_id']) ? (int) $validated['folder_id'] : null;
+        $user = $request->user();
+
+        // Reparenting through update() is the same privileged write as
+        // move()/bulkUpdate(), so it needs the same guard: the destination
+        // must be a folder this user can actually see. Only checked when the
+        // folder actually changes, so re-saving a file that already sits in
+        // an out-of-scope folder (reachable via a direct client share) still
+        // works.
+        if ($folderId !== null && $folderId !== $file->folder_id && $user !== null) {
+            $this->scope->folders($user)->findOrFail($folderId);
+        }
+
         $attributes = [
             'name' => $validated['name'],
             'description' => $validated['description'] ?? null,
-            'folder_id' => $validated['folder_id'] ?? null,
+            'folder_id' => $folderId,
         ];
 
         // Only meaningful while the comment scope is `selected`, and only
@@ -353,7 +383,7 @@ class FilesController extends Controller
         Gate::authorize('update', $file);
 
         $validated = $request->validate([
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
         ]);
 
         $folderId = $validated['folder_id'] ?? null;
@@ -389,7 +419,7 @@ class FilesController extends Controller
             'file_ids.*' => ['integer', 'distinct'],
 
             'folder_action' => ['required', Rule::in(['no_change', 'move'])],
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
 
             'description_action' => ['required', Rule::in(['no_change', 'set'])],
             'description' => ['nullable', 'string', 'max:2000'],

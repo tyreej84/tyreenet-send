@@ -13,142 +13,139 @@ Anything under **Upgrade notes** is something you have to do, not something we d
 This section collects changes as they land; the release process turns it into a numbered entry when
 a version is cut.
 
-### Added
+## 2.2.1 — 28 August 2026
 
-- **Google Cloud Storage as a storage backend.** External storage used to mean S3 and nothing else.
-  The Storage settings screen now asks which provider you are using first, and offers Google Cloud
-  Storage alongside the S3-compatible option: choose it, paste a service account key with read and
-  write access to your bucket, and new uploads go there. The key is stored encrypted and never shown
-  again, and **Test connection** checks it can actually reach the bucket before you switch anything
-  over — using a probe that works with a least-privilege key, rather than one that needs permission
-  to read the bucket's own settings. Downloads and previews are handed to the visitor as a
-  short-lived signed link, exactly as they already were for S3.
+A security release. Most of it closes ways somebody could reach past a boundary the rest of the
+application already enforced — including two that could lock you out of your own installation.
 
-  Nothing changes for an existing installation. Configurations saved before this release are S3, are
-  still S3, and are not asked to say so. Files already stored stay where they are — the setting
-  applies to new uploads, and there is still no migration between backends.
+**Merged**
 
-### Fixed
+- [#1708](https://github.com/projectsend/projectsend/pull/1708) — Let an enforced user reach the far side of the confirm-password screen
+- [#1716](https://github.com/projectsend/projectsend/pull/1716) — Refuse the last administrator deleting themselves, and keep setup shut
+- [#1710](https://github.com/projectsend/projectsend/pull/1710) — Stop a folder deleting the files inside it that its owner may not delete
+- [#1714](https://github.com/projectsend/projectsend/pull/1714) — Hold the group edit screen to the same library boundary as the rest
+- [#1717](https://github.com/projectsend/projectsend/pull/1717) — Keep a private reply private after the client is deleted
+- [#1713](https://github.com/projectsend/projectsend/pull/1713) — Refuse self-deactivation over the API however the boolean is written
+- [#1709](https://github.com/projectsend/projectsend/pull/1709) — Ask the seat cap where a pending client is approved through edit()
+- [#1715](https://github.com/projectsend/projectsend/pull/1715) — Add a file to a zip once, however many ways the selection reaches it
+- [#1707](https://github.com/projectsend/projectsend/pull/1707) — Leave the test workflow one concurrency block, so it parses again
+- [#1711](https://github.com/projectsend/projectsend/pull/1711) — Stop the update tests emptying bootstrap/cache for every other worker
+- [#1712](https://github.com/projectsend/projectsend/pull/1712) — Make the storage durability dashboard test assert the verdict
 
-- **Sessions no longer break behind a reverse proxy.** Signing in, or submitting the first-run setup
-  form, could answer with a page-filling error instead — most visibly for anyone running behind
-  Traefik, Nginx Proxy Manager or Caddy. `TRUSTED_PROXIES` was being read too early in the boot
-  sequence to be seen at all, so the setting had never had any effect on a web request. Without it
-  ProjectSend believed every visitor was arriving from the proxy over plain HTTP, built its links and
-  cookies accordingly, and rejected the form that came back as though it had come from somewhere
-  else. Docker installations that set the value as an environment variable were unaffected the whole
-  time; manual installs, where the guide tells you to put it in `.env`, were not — which is why this
-  looked so inconsistent. **Upgrade note:** if you run behind a proxy, set `TRUSTED_PROXIES` and do
-  not run `config:cache`, which stops `.env` being read at all. Both are covered in INSTALL.md.
-  ([#1672](https://github.com/projectsend/projectsend/issues/1672), reported by
-  [@mstewart14](https://github.com/mstewart14); fixed by
-  [@elibrachas](https://github.com/elibrachas) in
-  [#1674](https://github.com/projectsend/projectsend/pull/1674))
+**Also fixed**
 
-- **Saving something after your session has expired now takes you to the login page.** Instead of
-  being told to sign in again, you got an unexplained error — the dashboard's widget settings and
-  several settings screens were the usual places to meet it. The cause was a detail of how browsers
-  follow redirects: they repeat the original request at the new address, so "save this" became "save
-  this to the login page", which the login page has no idea what to do with. It now answers in a way
-  that sends the browser to read the page rather than repeat the save. The same thing could happen to
-  an account that was deactivated while someone was working in it, or one being asked to set up
-  two-factor authentication, and both are fixed with it.
-  ([#1673](https://github.com/projectsend/projectsend/issues/1673), reported by
-  [@mstewart14](https://github.com/mstewart14); found, diagnosed and fixed by
-  [@denkfabrik-li](https://github.com/denkfabrik-li) in
-  [#1680](https://github.com/projectsend/projectsend/pull/1680))
+- The plain-text version of an email no longer shows the link twice, wrapped in brackets.
+- The message you get when an account would exceed a limit no longer reads "limited to 1 staff
+  accounts".
 
-- **An upload that cannot be stored now fails instead of disappearing.** When files are kept in
-  object storage and the storage backend refuses a write — an expired key, a bucket that has been
-  renamed or removed, a permission that changed underneath you — the upload used to report success
-  and record the file anyway. The entry appeared in the file list, and the download it promised was
-  never going to work, because the bytes had gone nowhere. The upload now stops and says so, and no
-  file is recorded. Installations keeping files on local disk were never affected.
+### Upgrade notes
 
-- **Downloads and thumbnails for installations using external storage.** Two places assumed every
-  file sat on the server's own disk, which stopped being true the moment S3-compatible storage was
-  switched on. A share link to a file held in a bucket produced a broken download, and a public
-  listing could not draw a thumbnail for one at all — while the same file downloaded and previewed
-  correctly everywhere else, which made it look like the share link or the listing was at fault
-  rather than where the file lived. Both now read the file from wherever it actually is. Nothing
-  changes for installations keeping files on local disk, which is most of them.
+- **Nothing to do.** Drop in the new files and run `php artisan migrate` as usual; this release adds
+  no migrations, no settings and no new environment values.
 
-- **One confirmation message instead of two.** Saving a new client, system user or role showed the
-  same green "Client created." twice, stacked. So did deleting one. It was only ever cosmetic —
-  nothing happened twice — but it read as though something had, which is the last thing a
-  confirmation should do. Saves that stay on the same screen, such as the email settings, were never
-  affected.
-  ([#1675](https://github.com/projectsend/projectsend/issues/1675), reported and diagnosed by
-  [@denkfabrik-li](https://github.com/denkfabrik-li))
+- **One thing changes behaviour.** If somebody on your team has been deleting a folder as a way of
+  clearing out files other people uploaded, that now refuses and says how many files are in the way.
+  It is the same rule the file list has always applied one screen over — the folder was the way
+  around it, and what it removed was not recoverable.
 
-- **Connecting a provider to an account that already has one.** Signing in with Google, Microsoft or
-  a custom provider worked, but attaching one to an existing account did not: the **Connect** button
-  on Settings → Connected accounts appeared to do nothing at all. The button asks the server in the
-  background, and the server answered by redirecting to the provider — a redirect a browser will not
-  follow out of a background request to another site. The page sat there with no consent screen and
-  no error to explain it, so the only reading available was that the button was dead. The server now
-  tells the browser to go to the provider itself, and the flow starts as it should. Signing in from
-  the login page was never affected, and neither is it now.
-  ([#1676](https://github.com/projectsend/projectsend/pull/1676), found and fixed by
-  [@denkfabrik-li](https://github.com/denkfabrik-li))
+Thanks to [@denkfabrik-li](https://github.com/denkfabrik-li), who reported, diagnosed and fixed
+every one of the above.
 
-- **Downloads on a host where the web server is not PHP's user.** A download is not served by PHP:
-  PHP checks permissions and then hands the web server the path to stream. Where the two run as
-  different users — cPanel and Plesk commonly arrange it that way — the web server could not open
-  the file, because uploads are written readable only by the account that wrote them. The rest of
-  the site gave no sign of it: uploading worked, the library listed everything, and only downloads
-  failed, in the browser as `ERR_INVALID_RESPONSE`. Setting `FILES_WEB_SERVER_READABLE=true` now
-  writes uploads so the web server can read them. It is opt-in, and deliberately so — the modes it
-  uses are readable by every account on the machine, which is the wrong trade on a server where the
-  web server and PHP are the same user, as they are in the Docker image and on most servers people
-  set up themselves. The install guide has the full procedure, including the one thing no
-  application setting can fix: a PHP-FPM pool with a restrictive umask, which caps new directories
-  no matter what ProjectSend asks for.
-  ([#1668](https://github.com/projectsend/projectsend/issues/1668), reported by
-  [@denkfabrik-li](https://github.com/denkfabrik-li))
+### Issues closed since 2.2.0
 
-- **An installation that builds its own containers is no longer told to pull.** ProjectSend prints
-  the update instructions for the way you installed it, and it had two answers where it needed
-  three: anything running in a container was handed `docker compose pull && docker compose up -d`,
-  including the Compose stack that builds from a checkout of the repository. There is no image
-  behind those containers to pull, so both commands ran, reported success and changed nothing — and
-  the dashboard went on offering the same release. Those installations are now recognised and given
-  `git pull && docker compose up -d --build` instead, with the two extra steps a checkout needs when
-  a release moves its dependencies or its frontend.
-  ([#1661](https://github.com/projectsend/projectsend/issues/1661), reported by
-  [@mueller7382](https://github.com/mueller7382))
+The summary above is what changed. This is the paper trail, for anyone who wants to read the
+original report.
 
-- **The dashboard no longer fails on shared hosting.** To decide which update instructions to print,
-  ProjectSend asks whether it is running inside a container by looking for a file in the root of the
-  filesystem. On shared hosting PHP is usually confined to your own directory, and looking outside it
-  is treated as an error rather than as a "no" — so the one page that asks the question, the
-  dashboard, returned a 500 while every other page worked. It now takes the restriction as the answer
-  it always was: a server that keeps PHP inside a single directory is not our container image, and
-  gets the manual update instructions, which is correct for shared hosting anyway. Nothing to change
-  on your side, and no setting you would have been able to change if there were.
-  ([#1663](https://github.com/projectsend/projectsend/issues/1663), reported by
-  [@denkfabrik-li](https://github.com/denkfabrik-li))
+- [#1706](https://github.com/projectsend/projectsend/issues/1706) — V1 migration imports $2a$ bcrypt hashes that cause HTTP 500 on login
 
-- **502 Bad Gateway behind a reverse proxy.** Every page carried a `Link:` header listing its
-  frontend assets, duplicating tags the page already had in its `<head>` — twenty of them on the
-  login screen, more on a heavier page. nginx buffers a response's headers into a single block that
-  defaults to 4 KB, so the file list, at over 6 KB of headers, was refused with `upstream sent too
-  big header` and the proxy answered 502. Which pages went over depended on how many assets they
-  loaded, so it looked like an intermittent fault: the login screen appeared, and then the
-  application did not. The duplicate header is gone — the same pages now send under 1.3 KB — and no
-  browser loses anything, because the tags it actually reads were always in the document. The
-  install guide gained the proxy buffer settings for anyone on an older version or behind a proxy
-  holding a tighter default.
-  ([#1664](https://github.com/projectsend/projectsend/issues/1664), reported by
-  [@denkfabrik-li](https://github.com/denkfabrik-li))
+## 2.2.0 — 27 August 2026
 
-- **`docker logs` now shows the web server's log.** The container runs nginx, PHP-FPM, the queue
-  worker and the scheduler, and all of them reported to Docker except the one you need when a
-  request fails: nginx opened the log files named in its own configuration and wrote to them inside
-  the container, where nothing looks. The effect was that a proxy problem produced no logs on either
-  side — the reason for every 502 and every 403 existed, in a file nobody knew to open. Both its
-  access and error logs now go to the container's output, and the Docker guide has a section on
-  running behind a reverse proxy that says which side a given message points at.
+A big release. Most of it closes holes in who can see what. The rest is a handful of new things.
+
+**New**
+
+- Google Cloud Storage can hold your files, alongside S3.
+- You can set a maximum size for a zip download.
+- Zip downloads no longer hold up your email.
+- ProjectSend warns you if nothing is building your zip downloads.
+- A deleted account's email address can be used again.
+
+**Closed holes in who can see what**
+
+- A staff member limited to their own clients now stays limited everywhere: client records, file
+  names, groups, comment moderation, and the dashboard's activity and expired-file lists.
+- Private notes on a publicly shared file stay private.
+- Clients no longer see the names of folders they cannot open.
+- The maximum file size now applies to large uploads too.
+- A download limit now holds when a zip is collected.
+- A large upload cannot be finished twice at once.
+- A two-factor recovery code can only be used once.
+- Your notification settings accept only the switches the screen offers.
+
+**Fixed**
+
+- People whose accounts came from ProjectSend v1 can sign in again.
+- Sessions no longer break behind a reverse proxy.
+- No more 502 Bad Gateway behind a reverse proxy.
+- Saving after your session expires takes you to the login page, not an error.
+- An upload that cannot be stored now fails instead of vanishing.
+- Downloads, thumbnails and share links work when files are kept in cloud storage.
+- A zip download is never offered when the archive was not actually written.
+- Deleting an account either finishes completely or does nothing at all.
+- A file can no longer be put into a folder that has been deleted.
+- Declining a group membership request now happens once, not twice.
+- Creating something with a create-only role no longer ends in an error page.
+- Connecting Google or Microsoft to an account you already have now works.
+- Downloads work on cPanel and Plesk, where the web server is not PHP's user.
+- The dashboard no longer fails on shared hosting.
+- An installation built from source is no longer told to pull an image.
+- `docker logs` now shows the web server's log.
+- The repair tool no longer mistakes cached previews for stray files.
+- One confirmation message instead of two.
+
+**Before you upgrade, read the two notes below.** One of them needs you to do something if you
+installed ProjectSend by hand.
+
+### Upgrade notes
+
+- **Manual installs: your background worker needs one more queue.** Building a zip download now runs
+  on its own queue, so a worker started before this version watches the wrong one — it will keep
+  sending email perfectly while no zip download ever finishes, and nothing in any log will say why.
+  `update.sh` spots this and offers to fix the service file for you, keeping a copy of the old one,
+  so for most people there is nothing to do but say yes. If you upgrade by hand, change the
+  `ExecStart` line in `/etc/systemd/system/projectsend-worker.service` to read
+  `queue:work --queue=default,zips …`, then `sudo systemctl daemon-reload && sudo systemctl restart
+  projectsend-worker`. INSTALL.md has the full file, and the two-worker setup if you would rather
+  keep the two kinds of work apart. Docker installations need no change.
+
+  If it is ever missed, ProjectSend now says so on screen: staff who can see system information get
+  a banner naming the problem and the fix.
+
+- **If you run behind a reverse proxy, check `TRUSTED_PROXIES`.** It is now read correctly, which it
+  was not before. Set it in `.env`, and do not run `config:cache`, which stops `.env` being read at
+  all.
+
+Thanks to [@denkfabrik-li](https://github.com/denkfabrik-li), who found, diagnosed and fixed most
+of the boundary work above, and to [@mstewart14](https://github.com/mstewart14),
+[@elibrachas](https://github.com/elibrachas), [@mueller7382](https://github.com/mueller7382) and
+[@pabloalvarez44](https://github.com/pabloalvarez44) for reports and fixes.
+
+### Issues closed since 2.1.0
+
+The summary above is what changed. This is the paper trail, for anyone who wants to read the
+original report.
+
+- [#1627](https://github.com/projectsend/projectsend/issues/1627) — Errors while installing via Docker
+- [#1648](https://github.com/projectsend/projectsend/issues/1648) — A deleted account's email address can never be used again
+- [#1661](https://github.com/projectsend/projectsend/issues/1661) — Docker update instructions do not update ProjectSend when using official Compose setup
+- [#1662](https://github.com/projectsend/projectsend/issues/1662) — Preview files not available on v2.1.0
+- [#1663](https://github.com/projectsend/projectsend/issues/1663) — Dashboard 500s on shared hosting: container detection trips open_basedir
+- [#1664](https://github.com/projectsend/projectsend/issues/1664) — INSTALL.md: the nginx-in-front-of-Apache path needs the buffer advice too
+- [#1668](https://github.com/projectsend/projectsend/issues/1668) — INSTALL.md: X-Accel downloads fail when nginx and PHP-FPM run as different users
+- [#1672](https://github.com/projectsend/projectsend/issues/1672) — Projectsend 2 behind Traefik issues 419 when logging in or hitting an error?
+- [#1673](https://github.com/projectsend/projectsend/issues/1673) — Projectsend 2: Setting Widget Columns throws error
+- [#1675](https://github.com/projectsend/projectsend/issues/1675) — Success toast shows twice after create/delete redirects
+- [#1706](https://github.com/projectsend/projectsend/issues/1706) — V1 migration imports $2a$ bcrypt hashes that cause HTTP 500 on login
 
 ## 2.1.0 — 18 August 2026
 

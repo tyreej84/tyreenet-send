@@ -21,6 +21,52 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Uploads
+    |--------------------------------------------------------------------------
+    |
+    | Where a chunked upload's parts wait while the transfer is running,
+    | before they are assembled onto the storage disk. Leave this unset:
+    | it exists so the test suite can give each parallel worker its own
+    | directory, since parts are real files on a real path rather than a
+    | faked disk, and session ids restart at 1 in every worker's database.
+    |
+    */
+
+    /*
+    |--------------------------------------------------------------------------
+    | Platform seats
+    |--------------------------------------------------------------------------
+    |
+    | How many staff accounts and how many clients this installation may
+    | hold. Unset means unlimited, which is every self-hosted install: this
+    | exists for a managed one, where the operator sold a number and the
+    | application is the only process that can actually count against it.
+    |
+    | An operator stating the installation's own limit is not the same as
+    | the application inventing a plan tier — the distinction config/api.php
+    | draws when it declines to key a rate limit off billing. Nothing here
+    | knows what a plan is; it accepts a number and refuses to exceed it.
+    |
+    */
+
+    'platform' => [
+        'max_staff_users' => env('PROJECTSEND_PLATFORM_MAX_STAFF_USERS'),
+        'max_clients' => env('PROJECTSEND_PLATFORM_MAX_CLIENTS'),
+
+        // Seeded into Setting::TwoFactorEnforcement on first boot and never
+        // afterwards — see SeedSettingsCommand. Here rather than read from
+        // env() at the point of use, because config:cache stops .env being
+        // read at all and that is how TRUSTED_PROXIES came to silently do
+        // nothing.
+        'two_factor_enforcement' => env('PROJECTSEND_TWO_FACTOR_ENFORCEMENT'),
+    ],
+
+    'uploads' => [
+        'parts_path' => env('UPLOAD_PARTS_PATH'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Chunked upload part size (MB)
     |--------------------------------------------------------------------------
     |
@@ -72,7 +118,7 @@ return [
     |
     */
 
-    'version' => '2.1.0',
+    'version' => '2.2.1',
 
     /*
     |--------------------------------------------------------------------------

@@ -6,8 +6,11 @@ namespace App\Modules\Files\Access;
 
 use App\Models\User;
 use App\Modules\Files\Models\File;
+use App\Modules\Files\Models\FileAssignment;
 use App\Modules\Files\Models\Folder;
+use App\Modules\Files\Models\FolderAssignment;
 use App\Modules\Groups\Models\Group;
+use App\Modules\Identity\UserType;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
@@ -27,9 +30,36 @@ use Illuminate\Database\Eloquent\Builder;
 class StaffLibraryScope
 {
     /**
+     * Built queries, by user id. Building one is not free: it walks the
+     * assigned clients and File::scopeVisibleToClient runs four immediate
+     * lookups for each of them, none of which depend on the query being
+     * built. Callers ask over and over — the policies ask once per row on
+     * a listing, and Gate resolves a fresh policy for every check — so the
+     * same handful of lookups were being repeated per row.
+     *
+     * A clone goes back rather than the query itself, since every caller
+     * adds to it. Registered with the container as `scoped`, so the memo
+     * lasts a request and is dropped between queue jobs.
+     *
+     * @var array<int, Builder<File>>
+     */
+    private array $files = [];
+
+    /** @var array<int, Builder<Folder>> */
+    private array $folders = [];
+
+    /**
      * @return Builder<File>
      */
     public function files(User $user): Builder
+    {
+        return clone ($this->files[$user->id] ??= $this->buildFiles($user));
+    }
+
+    /**
+     * @return Builder<File>
+     */
+    private function buildFiles(User $user): Builder
     {
         $query = File::query();
 
@@ -53,6 +83,14 @@ class StaffLibraryScope
      * @return Builder<Folder>
      */
     public function folders(User $user): Builder
+    {
+        return clone ($this->folders[$user->id] ??= $this->buildFolders($user));
+    }
+
+    /**
+     * @return Builder<Folder>
+     */
+    private function buildFolders(User $user): Builder
     {
         $query = Folder::query();
 
@@ -139,10 +177,124 @@ class StaffLibraryScope
         return $ids === null || in_array($client->id, $ids, true);
     }
 
+    /**
+     * Every client this staff member may act on, as a query.
+     *
+     * The listing half of canAssignClient(), so a screen narrows by the
+     * same rule its buttons are guarded with rather than restating it —
+     * which is how ClientsController came to list every client on the
+     * installation, name and email, to a viewer who could reach nothing
+     * of theirs. An unscoped user gets the whole roster, unchanged.
+     *
+     * @return Builder<User>
+     */
+    public function clients(User $user): Builder
+    {
+        $query = User::query()->where('type', UserType::Client);
+        $ids = $this->assignableClientIds($user);
+
+        return $ids === null ? $query : $query->whereIn('id', $ids);
+    }
+
     public function canAssignGroup(User $user, Group $group): bool
     {
         $ids = $this->assignableGroupIds($user);
 
         return $ids === null || in_array($group->id, $ids, true);
+    }
+
+    /**
+     * Whether a staff member may put a client into a group, or take one
+     * out again.
+     *
+     * Not canAssignGroup(): that answers "may I share with this group",
+     * and it answers it *from* the membership — a group counts as the
+     * user's because one of their clients is in it. Deciding membership
+     * with a predicate derived from membership means whoever may edit
+     * the list also decides what the list entitles them to, which is not
+     * a boundary at all. It is also the wrong answer here in the other
+     * direction: a group nobody has joined yet belongs to nobody, so a
+     * scoped staff member could never put the first member into a group
+     * they had just created.
+     *
+     * The question membership actually asks is about reach. Joining a
+     * group hands the new member everything shared with it, and — when
+     * that member is one of the actor's own clients — hands the actor
+     * the same content back through File::scopeVisibleToClient, which is
+     * what StaffLibraryScope::files() is built on. So both sides have to
+     * hold: the client must be one this staff member holds, and the
+     * group must not already reach beyond their library. A group with
+     * nothing shared with it passes trivially, which is what keeps a
+     * newly created one usable.
+     *
+     * Unscoped staff are unaffected — both halves are true for them by
+     * construction.
+     */
+    public function allowsGroupMembership(User $user, Group $group, User $client): bool
+    {
+        return $this->canAssignClient($user, $client) && $this->groupReachesNoFurther($user, $group);
+    }
+
+    /**
+     * Whether this staff member may change a group itself — rename it,
+     * make it public, delete it.
+     *
+     * The reach half of allowsGroupMembership, on its own because there
+     * is no client in the question. Deleting a group is the destructive
+     * end of it: an assignment to a group is how its members reach a
+     * file, so removing the group takes that access away from every one
+     * of them. A staff member who may not add somebody to a group out of
+     * their reach should not be able to delete it out from under the
+     * people already in it.
+     */
+    public function allowsGroupChange(User $user, Group $group): bool
+    {
+        return $this->groupReachesNoFurther($user, $group);
+    }
+
+    /**
+     * Whether everything shared with this group is already inside the
+     * user's library — files assigned to it, and the folders whose
+     * subtrees it can browse.
+     *
+     * Asked as "is anything shared with this group outside my library",
+     * rather than by counting assignment rows against library rows. An
+     * assignment outlives the thing it points at: nothing clears these
+     * rows when a file or folder is deleted, and a deleted one can never
+     * appear in files()/folders(), which exclude trashed rows. Counting
+     * therefore never balanced again, and the group became permanently
+     * unmanageable for a scoped staff member — including for their own
+     * clients, and including removing somebody. Starting from the live
+     * row rather than from the assignment ignores the dead ones by
+     * construction, which is also the right answer: a deleted file is
+     * not reach, because nobody can reach it.
+     */
+    private function groupReachesNoFurther(User $user, Group $group): bool
+    {
+        if (! $user->isClientScoped()) {
+            return true;
+        }
+
+        $morph = $group->getMorphClass();
+
+        $assignedFiles = FileAssignment::query()->select('file_id')
+            ->where('assignable_type', $morph)->where('assignable_id', $group->id);
+
+        $outside = File::query()
+            ->whereIn('id', $assignedFiles)
+            ->whereNotIn('id', $this->files($user)->select('id'))
+            ->exists();
+
+        if ($outside) {
+            return false;
+        }
+
+        $assignedFolders = FolderAssignment::query()->select('folder_id')
+            ->where('assignable_type', $morph)->where('assignable_id', $group->id);
+
+        return ! Folder::query()
+            ->whereIn('id', $assignedFolders)
+            ->whereNotIn('id', $this->folders($user)->select('id'))
+            ->exists();
     }
 }

@@ -9,6 +9,10 @@ This page shows how to set that up. It assumes you have used Zapier before. If y
 short version is that a "Zap" is one rule made of a **trigger** (what starts it) and one or more
 **actions** (what it does).
 
+**One thing to check first:** everything here uses **Webhooks by Zapier**, which Zapier includes
+only from its Professional plan upwards. On Zapier's free plan you will not be able to add those
+steps. Nothing below works around that — it is Zapier's limit, not ours.
+
 Everything here also works with Make, n8n, Pipedream, Power Automate and anything else that can call
 an HTTP endpoint. See the last section.
 
@@ -82,10 +86,21 @@ which is exactly what Zapier needs to tell new things from old ones.
 
 | What you want to know | URL |
 |---|---|
-| A file was added | `https://your-install.example.com/api/v1/files` |
-| A client account was created | `https://your-install.example.com/api/v1/clients` |
-| A comment is waiting for approval | `https://your-install.example.com/api/v1/comments/pending` |
-| A group was created | `https://your-install.example.com/api/v1/groups` |
+| **A file was shared with a client** | `…/api/v1/activity?action[]=file.assigned` |
+| **A client downloaded a file** | `…/api/v1/activity?action[]=file.downloaded` |
+| **Somebody left a comment** | `…/api/v1/activity?action[]=comment.posted` |
+| Anything at all happened | `…/api/v1/activity` |
+| A file was added | `…/api/v1/files` |
+| A client account was created | `…/api/v1/clients` |
+| A comment is waiting for approval | `…/api/v1/comments/pending` |
+| A group was created | `…/api/v1/groups` |
+
+The first three are the ones people usually want, and they only work through
+`/api/v1/activity`. Sharing a file writes an assignment and leaves the file itself untouched, so
+polling the file list will never show you a share; downloads are recorded in the activity log and
+nowhere else. Repeat `action[]` to watch for more than one kind of thing at once.
+
+Watching activity needs a token with **view activity log** ticked.
 
 In the Zapier step, set:
 
@@ -95,6 +110,28 @@ In the Zapier step, set:
 - **Key**: `data` — this tells Zapier where the list of items is inside the response
 
 ### What comes back
+
+From `/api/v1/activity`:
+
+```json
+{
+  "data": [
+    {
+      "id": 1284,
+      "action": "file.assigned",
+      "created_at": "2026-08-25T09:14:02+00:00",
+      "actor": { "id": 3, "name": "Dana", "type": "staff" },
+      "subject": { "type": "file", "id": 128, "name": "October invoice" },
+      "context": { "target": "Acme Ltd" }
+    }
+  ]
+}
+```
+
+So a Slack message can read *"Dana shared October invoice with Acme Ltd"* using `actor.name`,
+`subject.name` and `context.target`.
+
+From `/api/v1/files`:
 
 ```json
 {
@@ -204,14 +241,18 @@ Only clients can be group members. Passing a staff account is refused.
 
 ## Three complete examples
 
-### 1. Tell the team in Slack when a file arrives
+### 1. Tell the team in Slack when a client downloads something
 
-- **Trigger**: Webhooks by Zapier → Retrieve Poll → `GET /api/v1/files`
+- **Trigger**: Webhooks by Zapier → Retrieve Poll →
+  `GET /api/v1/activity?action[]=file.downloaded`
 - **Action**: Slack → Send Channel Message
 
-In the Slack message, use the `name` and `size` fields from the trigger. Something like:
+Use the fields from the trigger:
 
-> New file in ProjectSend: **{{name}}** ({{size}} bytes)
+> **{{actor__name}}** downloaded **{{subject__name}}**
+
+This is the one people ask for most, and it is only possible through the activity feed — a download
+leaves no trace on the file itself.
 
 ### 2. Turn a form submission into a client account
 
@@ -234,24 +275,31 @@ a password reset link, or send them one yourself in a third step.
 
 ## Things to know before you rely on it
 
-### Your token will expire
+### Decide about expiry before you build
 
-Every token has an expiry date, and the longest you can set is one year. There is no way for Zapier
-to renew it on its own.
+Tokens expire by default — 90 days to start with, up to a year. Zapier cannot renew one on its own,
+so when it expires the Zap stops. Zapier shows errors, but nobody gets a phone call, and the usual
+first symptom is somebody noticing weeks later that something stopped happening.
 
-When it expires, the Zap stops working. Zapier will show errors, but nobody gets a phone call about
-it, and the usual first symptom is someone noticing that something stopped happening weeks ago.
+There is a **Never expires** option on the token screen, which avoids that entirely. It is off by
+default on purpose: a token nobody ever rotates is a password nobody ever changes. For an
+integration that has to keep running unattended it is usually the right choice — pick it knowingly,
+give the token only the permissions the Zap needs, and revoke it the day the Zap goes away.
 
-Put a reminder in your calendar for a week before the expiry date. When the day comes, create a new
-token and paste it into the Zap. You do not need to rebuild anything.
+If you do set an expiry, put a reminder in your calendar for a week before. When the day comes,
+create a new token and paste it into the Zap; you do not need to rebuild anything.
 
-### Deletions cannot start a Zap
+### Reacting to a deletion
 
-Zapier finds out about things by asking for a list. A deleted file simply stops appearing in that
-list, and there is no way to tell that apart from it never having been there.
+"When a file is deleted" works, but only through the activity feed:
+`…/api/v1/activity?action[]=file.deleted`.
 
-So "when a file is deleted" cannot be a trigger. This will change when ProjectSend gains webhooks,
-which are planned but not built.
+It cannot work any other way. Zapier finds out about things by asking for a list, and a deleted file
+simply stops appearing in one — there is no way to tell that apart from it never having been there.
+The activity feed records the moment instead.
+
+One thing to know when you build it: a deletion has no `subject`, because the file is already gone
+when the entry is written. The name is in `context.name`.
 
 ### There is a limit on how often you can call
 

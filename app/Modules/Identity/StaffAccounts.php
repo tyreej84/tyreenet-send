@@ -7,7 +7,10 @@ namespace App\Modules\Identity;
 use App\Models\User;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLogger;
+use App\Modules\Files\Access\StaffLibraryScope;
+use App\Modules\Identity\Erasure\ErasureSchedule;
 use App\Modules\Identity\Models\Role;
+use App\Modules\Platform\Seats\SeatAllowance;
 use App\Modules\Identity\Permissions\PermissionChecker;
 use App\Modules\Identity\Permissions\SystemRole;
 use Illuminate\Support\Collection;
@@ -34,6 +37,9 @@ class StaffAccounts
     public function __construct(
         private readonly ActivityLogger $activity,
         private readonly PermissionChecker $permissions,
+        private readonly ErasureSchedule $erasure,
+        private readonly SeatAllowance $seats,
+        private readonly StaffLibraryScope $library,
     ) {}
 
     /**
@@ -45,8 +51,17 @@ class StaffAccounts
      * permission into every permission and makes the rest of the matrix
      * decorative.
      *
-     * An administrator holds every permission by construction, so this is
-     * always true for them and the admin experience is unchanged.
+     * A role's `client_scoped` flag is part of that authority, and the
+     * larger part: a role without it reaches the whole library, while a
+     * client-scoped actor reaches only the clients assigned to them. So
+     * one may not hand out a role that is not client-scoped -- to a
+     * colleague, to a new account, or to themselves, which is the case
+     * that matters, since the role picker is how an account changes role
+     * and an account may edit its own.
+     *
+     * An administrator holds every permission by construction and is
+     * never client-scoped, so this is always true for them and the admin
+     * experience is unchanged.
      */
     public function mayGrant(User $actor, Role $role): bool
     {
@@ -55,6 +70,10 @@ class StaffAccounts
         }
 
         if ($role->is_administrator) {
+            return false;
+        }
+
+        if ($actor->isClientScoped() && ! $role->client_scoped) {
             return false;
         }
 
@@ -88,6 +107,39 @@ class StaffAccounts
     public function assignableRoleIds(User $actor): array
     {
         return array_values($this->assignableRoles($actor)->map(fn (Role $role): int => $role->id)->all());
+    }
+
+    /**
+     * Client ids this actor may put on a staff account's roster — the same
+     * rule as mayGrant(), applied to reach instead of to authority.
+     *
+     * An assigned client is not a label: it is everything that client can
+     * see, handed to whoever holds it. So a client-scoped actor may hand
+     * out the clients they hold and no others — including to themselves,
+     * which is the case that matters, since guardTarget() lets anybody
+     * edit their own account and `assigned_clients` was never checked
+     * against the actor at all. Without this a scoped staff member with
+     * `edit_users` could PATCH their own id with every client id on the
+     * installation and read the whole library from then on.
+     *
+     * An unrestricted actor gets the full roster back rather than null, so
+     * every caller can validate against one list instead of composing a
+     * conditional rule. That list is already client-typed, which is why it
+     * replaces the `exists:users,id where type = client` rule rather than
+     * joining it.
+     *
+     * @return list<int>
+     */
+    public function assignableClientIds(User $actor): array
+    {
+        $ids = $this->library->assignableClientIds($actor);
+
+        if ($ids !== null) {
+            return $ids;
+        }
+
+        return array_values(User::query()->where('type', UserType::Client)
+            ->pluck('id')->map(fn ($id): int => (int) $id)->all());
     }
 
     /**
@@ -183,6 +235,12 @@ class StaffAccounts
      */
     public function create(array $attributes, array $assignedClients = []): User
     {
+        // Before the write, so a refusal creates nothing. Both staff
+        // controllers reach this, web and API; the other two doors into a
+        // staff seat are AccountConversion::toStaff() and the console
+        // command, which asks deliberately not to — see SeatAllowance.
+        $this->seats->guardStaff();
+
         $user = User::create([
             'type' => UserType::Staff,
             'active' => true,
@@ -294,9 +352,10 @@ class StaffAccounts
     }
 
     /**
-     * Soft-delete the account and record it. Returns the name, which the
-     * caller needs afterwards for the content-reassignment step — by then
-     * the model is trashed and reading it back is needless ceremony.
+     * Soft-delete the account, schedule its permanent erasure and record
+     * it. Returns the name, which the caller needs afterwards for the
+     * content-reassignment step — by then the model is trashed and reading
+     * it back is needless ceremony.
      *
      * **This is only half of deleting somebody.** What happens to the
      * files and folders they own is the other half, and it lives in
@@ -315,6 +374,7 @@ class StaffAccounts
     {
         $name = $user->name;
 
+        $this->erasure->apply($user);
         $user->delete();
 
         $this->activity->log(Action::UserDeleted, context: ['name' => $name]);

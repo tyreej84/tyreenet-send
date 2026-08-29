@@ -111,7 +111,11 @@ test('installing wins over updating', function () {
 });
 
 test('completing setup raises the greeting', function () {
-    User::query()->delete();
+    // forceDelete, not delete: "a fresh installation" means no staff row
+    // at all. A soft-deleted one is evidence that setup already happened,
+    // and EnsureSetupIsComplete counts it as such so that losing the last
+    // administrator cannot reopen the first-run form to a stranger.
+    User::query()->forceDelete();
 
     $this->post('/setup', [
         'site_name' => 'Acme Files',
@@ -127,7 +131,7 @@ test('completing setup raises the greeting', function () {
 // Unattended provisioning skips the setup screen entirely, and is how
 // every container that came up from environment variables was installed.
 test('provisioning from the command line raises it too', function () {
-    User::query()->delete();
+    User::query()->forceDelete();
 
     $this->artisan('projectsend:admin', [
         '--name' => 'Ada',
@@ -157,16 +161,15 @@ test('it only lists what this person may actually do', function () {
         ->and($keys)->not->toContain('theme');
 });
 
-// The example the brief named: a managed installation has no staff
-// accounts of its own to hand out, no mail server to point anywhere and
-// no scheduler to check.
+// A managed installation has no mail server to point anywhere and no
+// scheduler to check. It does now have staff accounts of its own — that
+// changed in 2.2.0 — so 'team' belongs on its list where it once did not.
 test('a managed installation is not sent to screens it does not have', function () {
     config()->set('projectsend.edition', Edition::Cloud);
 
     $keys = quickStartKeys($this->admin);
 
-    expect($keys)->toContain('client', 'upload', 'theme', 'email-theme')
-        ->and($keys)->not->toContain('team')
+    expect($keys)->toContain('client', 'upload', 'theme', 'email-theme', 'team')
         ->and($keys)->not->toContain('email')
         ->and($keys)->not->toContain('scheduler');
 });

@@ -10,12 +10,16 @@ use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLogger;
 use App\Modules\Clients\ClientCustomFieldType;
 use App\Modules\Clients\ClientStorageUsage;
+use App\Modules\Files\Access\StaffLibraryScope;
+use App\Modules\Platform\Seats\SeatAllowance;
 use App\Modules\Clients\Models\ClientCustomField;
 use App\Modules\Clients\Models\ClientCustomFieldValue;
 use App\Modules\Clients\Notifications\ClientAccountEditedNotification;
 use App\Modules\Clients\Notifications\ClientWelcomeNotification;
 use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Identity\AccountContentDeletion;
+use App\Modules\Identity\Erasure\AvailableEmailRule;
+use App\Modules\Identity\Erasure\ErasureSchedule;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Notifications\ResetPasswordNotification;
 use App\Modules\Identity\Permissions\SystemRole;
@@ -27,6 +31,7 @@ use App\Support\Pagination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Password as PasswordBroker;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -47,6 +52,9 @@ class ClientsController extends Controller
         private readonly ClientStorageUsage $storageUsage,
         private readonly DeletedAccountContent $accountContent,
         private readonly AccountContentDeletion $accountDeletion,
+        private readonly StaffLibraryScope $scope,
+        private readonly SeatAllowance $seats,
+        private readonly ErasureSchedule $erasure,
     ) {}
 
     public function index(Request $request): Response
@@ -61,8 +69,14 @@ class ClientsController extends Controller
             'status' => $validated['status'] ?? null,
         ];
 
-        $clients = User::query()
-            ->where('type', UserType::Client)
+        // Narrowed by the same rule the buttons on each row are guarded
+        // with. A client-scoped staff member is not shown the name and
+        // email of somebody they can reach nothing of — the same thing
+        // MembershipRequest::approvableBy does for its queue.
+        $viewer = $request->user();
+        assert($viewer !== null);
+
+        $clients = $this->scope->clients($viewer)
             ->when($filters['search'], fn (Builder $query, string $search) => $query->where(fn (Builder $q) => $q
                 ->where('name', 'like', "%{$search}%")
                 ->orWhere('email', 'like', "%{$search}%")))
@@ -88,11 +102,23 @@ class ClientsController extends Controller
             'pagination' => Pagination::meta($clients),
             'filters' => $filters,
             'reassign_candidates' => $this->accountDeletion->candidates(),
+            // Null on a self-hosted install: no limit, nothing to say.
+            'seats' => $this->seats->clientState(),
         ]);
     }
 
-    public function create(): Response
+    public function create(): RedirectResponse|Response
     {
+        // The same courtesy UsersController::create() does: a full
+        // installation is an ordinary state on a managed plan, so say so
+        // before somebody fills in a form that cannot be submitted. The
+        // guard in store() is still the rule; this is only the door.
+        $seats = $this->seats->clientState();
+
+        if ($seats !== null && $seats['full']) {
+            return redirect()->route('clients.index')->with('error', $seats['message']);
+        }
+
         return Inertia::render('clients/create', [
             'custom_fields' => $this->customFieldDefinitions(),
             'default_storage_quota_mb' => (int) $this->settings->get(Setting::DefaultClientStorageQuotaMb),
@@ -101,9 +127,13 @@ class ClientsController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // A client created here is approved by construction, so it counts
+        // immediately — unlike a self-registration awaiting a decision.
+        $this->seats->guardClient();
+
         $validated = $request->validate(array_merge([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', new AvailableEmailRule],
             'invite' => ['sometimes', 'boolean'],
             'password' => [Rule::requiredIf(! $request->boolean('invite')), 'nullable', 'confirmed', Password::defaults()],
             'storage_quota_mb' => ['nullable', 'integer', 'min:0'],
@@ -140,12 +170,42 @@ class ClientsController extends Controller
 
         $message = $request->boolean('invite') ? __('Recipient invited.') : __('Recipient created.');
 
-        return redirect()->route('clients.edit', $client)->with('success', $message);
+        // A role can hold create_clients without edit_clients, and the edit
+        // page this used to land on unconditionally answers such a role
+        // with a 403 — after the client was created, logged and welcomed.
+        // Fall back to the create form: it shares this route's own gate, so
+        // it is reachable by exactly whoever just created the record, and
+        // the success toast shows there.
+        $target = $request->user()?->can('edit_clients')
+            ? redirect()->route('clients.edit', $client)
+            : redirect()->route('clients.create');
+
+        return $target->with('success', $message);
     }
 
-    public function edit(User $client): Response
+    /**
+     * The one question every route binding a client has to ask.
+     *
+     * A permission is not a boundary: `edit_clients` says this staff
+     * member manages clients, not that they manage *this* one — the same
+     * rule ClientFilesController::index applies one route over. 404
+     * rather than 403, so a client outside the roster is not
+     * distinguishable from one that is not there.
+     */
+    private function guardTarget(Request $request, User $client): void
     {
         abort_unless($client->isClient(), 404);
+
+        $viewer = $request->user();
+        assert($viewer !== null);
+
+        abort_unless($this->scope->canAssignClient($viewer, $client), 404);
+    }
+
+    public function edit(Request $request, User $client): Response
+    {
+        $this->guardTarget($request, $client);
+
 
         return Inertia::render('clients/edit', [
             'client' => [
@@ -170,7 +230,8 @@ class ClientsController extends Controller
 
     public function update(Request $request, User $client): RedirectResponse
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $validated = $request->validate(array_merge([
             'name' => ['required', 'string', 'max:255'],
@@ -195,8 +256,13 @@ class ClientsController extends Controller
         ]);
 
         // Activating a pending account through the edit screen counts as
-        // approval and clears the request flag.
+        // approval and clears the request flag — which is the moment a
+        // seat is spent, so the cap is asked here for the same reason
+        // AccountRequestsController::approve() asks it one screen over.
+        // Inside the branch, not above it: an installation at its cap must
+        // still be able to rename a client it already has.
         if ($client->account_requested && $validated['active']) {
+            $this->seats->guardClient('active');
             $client->account_requested = false;
         }
 
@@ -229,9 +295,10 @@ class ClientsController extends Controller
      * Remove this account's second factor, for the client who has lost
      * their authenticator and their recovery codes.
      */
-    public function destroyTwoFactor(User $client, TwoFactorAdministration $twoFactor): RedirectResponse
+    public function destroyTwoFactor(Request $request, User $client, TwoFactorAdministration $twoFactor): RedirectResponse
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $twoFactor->reset($client);
 
@@ -240,16 +307,29 @@ class ClientsController extends Controller
 
     public function destroy(Request $request, User $client): RedirectResponse
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $validated = $this->accountDeletion->validate($request, $client);
 
-        $name = $client->name;
-        $client->delete();
+        // Soft-deleting the account and disposing of its files are two
+        // separate writes; keep them in one transaction so a failure in the
+        // second (e.g. the reassignment target deleted between validation
+        // and apply()'s findOrFail) cannot leave the account deleted with
+        // its content still pointing at it.
+        //
+        // The erasure stamp goes inside for the same reason: a deletion
+        // that rolls back must not leave a live account carrying a date
+        // on which it would be erased.
+        DB::transaction(function () use ($validated, $client): void {
+            $name = $client->name;
+            $this->erasure->apply($client);
+            $client->delete();
 
-        $this->activity->log(Action::UserDeleted, context: ['name' => $name]);
+            $this->activity->log(Action::UserDeleted, context: ['name' => $name]);
 
-        $this->accountDeletion->apply($validated, $client, $name);
+            $this->accountDeletion->apply($validated, $client, $name);
+        });
 
         return redirect()->route('clients.index')->with('success', __('Client deleted.'));
     }
