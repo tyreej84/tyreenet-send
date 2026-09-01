@@ -19,6 +19,8 @@ tar -C "$destination" -czf "$archive" "$(basename "$latest")"
 age -r "$AGE_RECIPIENT" -o "$encrypted" "$archive"
 sha256sum "$encrypted" > "$encrypted.sha256"
 rclone copy "$encrypted" "$encrypted.sha256" "$RCLONE_REMOTE/"
+docker compose exec -T app php artisan projectsend:record-backup \
+    --status=offsite --name="$(basename "$latest")" --message="encrypted off-site copy completed" >/dev/null || true
 rm -f "$archive" "$encrypted" "$encrypted.sha256"
 
 echo "Encrypted backup uploaded to $RCLONE_REMOTE"

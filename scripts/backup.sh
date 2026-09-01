@@ -63,5 +63,9 @@ docker compose start app >/dev/null
 app_stopped=false
 trap - EXIT INT TERM
 
+backup_bytes=$(du -sk "$final" | awk '{print $1 * 1024}')
+docker compose exec -T app php artisan projectsend:record-backup \
+    --status=completed --name="$(basename "$final")" --bytes="$backup_bytes" >/dev/null || true
+
 echo "Backup completed: $final"
 echo "Copy this directory to storage outside the application server."

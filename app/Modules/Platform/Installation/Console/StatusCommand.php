@@ -7,6 +7,7 @@ namespace App\Modules\Platform\Installation\Console;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLog;
 use App\Modules\Files\Models\File;
+use App\Modules\Files\Uploads\ClamAvHealth;
 use App\Modules\Identity\TwoFactor\TwoFactorEnforcement;
 use App\Modules\Identity\UserType;
 use App\Modules\Platform\Capabilities\CapabilityRegistry;
@@ -208,7 +209,7 @@ class StatusCommand extends Command
     }
 
     /**
-     * @return array{pending_migrations: int, failed_jobs: int, queues: array<string, int|null>}
+     * @return array{pending_migrations: int, failed_jobs: int, queues: array<string, int|null>, malware_scanner: array{enabled: bool, reachable: bool|null, version: string|null, signature_date: string|null}}
      */
     private function health(): array
     {
@@ -223,6 +224,7 @@ class StatusCommand extends Command
                 'default' => $this->queueDepth('default'),
                 'zips' => $this->queueDepth('zips'),
             ],
+            'malware_scanner' => app(ClamAvHealth::class)->report(),
         ];
     }
 

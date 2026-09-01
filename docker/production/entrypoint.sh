@@ -18,6 +18,21 @@ set -e
 
 cd /var/www/html
 
+# Docker/Kubernetes secret-file convention. For each supported secret,
+# VALUE_FILE may point at a mounted file instead of putting VALUE in the
+# container environment where process inspection and support bundles can
+# expose it. An explicit VALUE always wins.
+for variable in APP_KEY DB_PASSWORD MAIL_PASSWORD ADMIN_PASSWORD AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY WEBHOOK_SECRET; do
+    eval "value=\${$variable:-}"
+    eval "file=\${${variable}_FILE:-}"
+    if [ -z "$value" ] && [ -n "$file" ]; then
+        [ -r "$file" ] || { echo "projectsend: ${variable}_FILE is not readable: $file" >&2; exit 1; }
+        value=$(cat "$file")
+        [ -n "$value" ] || { echo "projectsend: ${variable}_FILE is empty: $file" >&2; exit 1; }
+        export "$variable=$value"
+    fi
+done
+
 # storage/ is the declared volume, so anything that must outlive the
 # container lives there. Recreate the tree first: a bind-mounted host
 # directory arrives empty, unlike a named volume which Docker seeds from

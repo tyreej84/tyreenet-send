@@ -24,6 +24,7 @@ use App\Modules\Platform\Http\Controllers\EmailTemplatesController;
 use App\Modules\Platform\Http\Controllers\ExternalStorageSettingsController;
 use App\Modules\Platform\Http\Controllers\GettingStartedController;
 use App\Modules\Platform\Http\Controllers\LanguageSettingsController;
+use App\Modules\Platform\Http\Controllers\OperationalHealthController;
 use App\Modules\Platform\Http\Controllers\PrivacySettingsController;
 use App\Modules\Platform\Http\Controllers\PublicListingSettingsController;
 use App\Modules\Platform\Http\Controllers\SchedulerMonitoringController;
@@ -115,6 +116,9 @@ Route::middleware('auth')->group(function () {
     // footer links every staff member here regardless of what they may
     // edit.
     Route::middleware('staff')->get('system/about', AboutController::class)->name('system.about');
+    Route::middleware(['staff', 'can:view_system_info'])
+        ->get('system/health', OperationalHealthController::class)
+        ->name('system.health');
 
     // Where a new installation's administrator is sent on their first
     // visit, and a page any staff member can come back to. `staff` alone:

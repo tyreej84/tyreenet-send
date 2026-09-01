@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation } from '@/hooks/use-translation';
+import { useFormatDate } from '@/hooks/use-format-date';
 import AppLayout from '@/layouts/app-layout';
 
 interface SecuritySettingsProps {
@@ -18,6 +19,30 @@ interface SecuritySettingsProps {
     password_reject_breached: boolean;
     password_min_length_floor: number;
     password_min_length_ceiling: number;
+    staff_authentication: {
+        total: number;
+        two_factor_enrolled: number;
+        passkey_enrolled: number;
+        without_strong_authentication: number;
+    };
+    backup_history: Array<{
+        status: string;
+        name: string;
+        bytes: number;
+        message: string;
+        recorded_at: string;
+    }>;
+    security_posture: {
+        public_links_without_password: number;
+        unlimited_public_links: number;
+        expired_api_tokens: number;
+        failed_jobs: number;
+        failed_webhooks: number;
+        malware_scanning: boolean;
+        malware_fail_closed: boolean;
+        malware_health: { enabled: boolean; reachable: boolean | null; version: string | null; signature_date: string | null };
+        webhooks_configured: boolean;
+    };
 }
 
 export default function SecuritySettings({
@@ -26,8 +51,12 @@ export default function SecuritySettings({
     password_reject_breached,
     password_min_length_floor,
     password_min_length_ceiling,
+    staff_authentication,
+    backup_history,
+    security_posture,
 }: SecuritySettingsProps) {
     const { t } = useTranslation();
+    const { dateTime } = useFormatDate();
 
     const breadcrumbs: BreadcrumbItem[] = [
         {
@@ -67,6 +96,86 @@ export default function SecuritySettings({
                 <Heading title={t('Security settings')} description={t('Authentication requirements for this installation')} />
 
                 <form onSubmit={submit} className="max-w-xl space-y-6">
+                    <div className="grid gap-3 rounded-lg border p-4">
+                        <div>
+                            <p className="font-medium">{t('Staff authentication coverage')}</p>
+                            <p className="text-muted-foreground text-sm">
+                                {t(':protected of :total staff accounts have two-factor authentication or a passkey.', {
+                                    protected: staff_authentication.total - staff_authentication.without_strong_authentication,
+                                    total: staff_authentication.total,
+                                })}
+                            </p>
+                        </div>
+                        <dl className="grid grid-cols-3 gap-3 text-sm">
+                            <div>
+                                <dt className="text-muted-foreground">{t('Two-factor')}</dt>
+                                <dd className="font-semibold">{staff_authentication.two_factor_enrolled}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-muted-foreground">{t('Passkeys')}</dt>
+                                <dd className="font-semibold">{staff_authentication.passkey_enrolled}</dd>
+                            </div>
+                            <div>
+                                <dt className="text-muted-foreground">{t('Unprotected')}</dt>
+                                <dd className={staff_authentication.without_strong_authentication > 0 ? 'font-semibold text-red-600' : 'font-semibold'}>
+                                    {staff_authentication.without_strong_authentication}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <div className="grid gap-3 rounded-lg border p-4">
+                        <p className="font-medium">{t('Security posture')}</p>
+                        <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                            {[
+                                [t('Links without passwords'), security_posture.public_links_without_password],
+                                [t('Unlimited links'), security_posture.unlimited_public_links],
+                                [t('Expired API tokens'), security_posture.expired_api_tokens],
+                                [t('Failed jobs'), security_posture.failed_jobs],
+                                [t('Failed webhooks'), security_posture.failed_webhooks],
+                            ].map(([label, value]) => (
+                                <div key={String(label)}>
+                                    <dt className="text-muted-foreground">{label}</dt>
+                                    <dd className={Number(value) > 0 ? 'font-semibold text-amber-600' : 'font-semibold'}>{value}</dd>
+                                </div>
+                            ))}
+                            <div>
+                                <dt className="text-muted-foreground">{t('Upload scanning')}</dt>
+                                <dd className={security_posture.malware_scanning && security_posture.malware_fail_closed ? 'font-semibold' : 'font-semibold text-red-600'}>
+                                    {security_posture.malware_scanning
+                                        ? security_posture.malware_health.reachable === false
+                                            ? t('Unavailable')
+                                            : security_posture.malware_fail_closed
+                                            ? t('Fail closed')
+                                            : t('Fail open')
+                                        : t('Disabled')}
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <div className="grid gap-3 rounded-lg border p-4">
+                        <div>
+                            <p className="font-medium">{t('Backup activity')}</p>
+                            <p className="text-muted-foreground text-sm">{t('Results reported by the production backup and off-site copy scripts.')}</p>
+                        </div>
+                        {backup_history.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">{t('No backup result has been reported yet.')}</p>
+                        ) : (
+                            <ul className="space-y-2 text-sm">
+                                {backup_history.map((entry, index) => (
+                                    <li key={`${entry.recorded_at}-${index}`} className="flex items-start justify-between gap-4">
+                                        <span>
+                                            <span className="font-medium">{entry.name}</span>
+                                            <span className="text-muted-foreground"> · {entry.status}</span>
+                                        </span>
+                                        <time className="text-muted-foreground whitespace-nowrap">{dateTime(entry.recorded_at)}</time>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+
                     <div className="grid gap-2">
                         <Label htmlFor="two_factor_enforcement">{t('Require two-factor authentication')}</Label>
 

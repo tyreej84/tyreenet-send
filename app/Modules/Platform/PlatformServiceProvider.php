@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Modules\Platform;
 
 use App\Modules\Files\Storage\ResolvingUploadDisk;
+use App\Modules\Platform\Backups\Console\RecordBackupCommand;
+use App\Modules\Audit\Events\ActivityRecorded;
+use App\Modules\Platform\Webhooks\Console\ReplayWebhookCommand;
+use App\Modules\Platform\Webhooks\Jobs\DeliverWebhook;
 use App\Modules\Notifications\NotificationTypeDefinition;
 use App\Modules\Notifications\NotificationTypeRegistry;
 use App\Modules\Platform\Capabilities\CapabilityRegistry;
@@ -88,6 +92,8 @@ class PlatformServiceProvider extends ServiceProvider
                 SeedSettingsCommand::class,
                 StatusCommand::class,
                 RefreshMailOAuthTokensCommand::class,
+                RecordBackupCommand::class,
+                ReplayWebhookCommand::class,
             ]);
         }
     }
@@ -125,6 +131,11 @@ class PlatformServiceProvider extends ServiceProvider
         // capability-gated.
         Event::listen(ScheduledTaskFinished::class, [RecordsScheduledTaskRuns::class, 'onFinished']);
         Event::listen(ScheduledTaskFailed::class, [RecordsScheduledTaskRuns::class, 'onFailed']);
+        Event::listen(ActivityRecorded::class, function (ActivityRecorded $event): void {
+            if (is_string(config('webhooks.url')) && config('webhooks.url') !== '' && is_string(config('webhooks.secret')) && config('webhooks.secret') !== '') {
+                DeliverWebhook::dispatch($event->activity->id);
+            }
+        });
 
         // In-app only — this is an internal "go check the dashboard"
         // nudge, not a mail-worthy event on its own; the dashboard's
