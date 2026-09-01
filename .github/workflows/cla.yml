@@ -41,11 +41,16 @@ jobs:
     # `issue.pull_request` is present only when the comment is on a pull
     # request; comments on ordinary issues have nothing for this action to
     # check.
+    #
+    # The repository check keeps forks from requesting ProjectSend's private
+    # CLA-signature token. Forks retain this workflow for clean upstream
+    # merges, but only the upstream repository owns and can use that secret.
     if: >-
-      github.event_name == 'pull_request_target'
-      || (github.event.issue.pull_request
-          && (github.event.comment.body == 'recheck'
-              || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA'))
+      github.repository == 'projectsend/projectsend'
+      && (github.event_name == 'pull_request_target'
+          || (github.event.issue.pull_request
+              && (github.event.comment.body == 'recheck'
+                  || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')))
     runs-on: ubuntu-latest
     steps:
       - name: CLA check
