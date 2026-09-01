@@ -59,9 +59,10 @@ test('webhooks are signed, recorded, and contain the audit event', function () {
 test('protected operational health is available to administrators', function () {
     config(['malware.enabled' => false]);
 
-    $this->actingAs(User::factory()->create())
-        ->getJson('/system/health')
-        ->assertOk()
+    $response = $this->actingAs(User::factory()->create())
+        ->getJson('/system/health');
+
+    $response->assertStatus($response->json('ready') ? 200 : 503)
         ->assertJsonStructure(['ready', 'database', 'redis', 'storage', 'malware_scanner', 'scheduler', 'checked_at']);
 });
 

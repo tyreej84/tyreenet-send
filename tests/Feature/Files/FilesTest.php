@@ -719,6 +719,7 @@ test('the editor\'s expired flag flips as soon as a save changes the expiry date
 // filename should not be able to break the response at all.
 test('control characters are stripped from an uploaded filename', function () {
     $user = User::factory()->create();
+    Storage::disk('files')->put('2026/08/x.pdf', 'test upload');
 
     $file = app(StoreUploadedFile::class)->create(
         uploader: $user,
