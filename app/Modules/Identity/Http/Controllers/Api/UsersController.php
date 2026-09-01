@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Modules\Api\Support\PollingQuery;
 use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Identity\AccountContentDeletion;
+use App\Modules\Identity\Erasure\AvailableEmailRule;
 use App\Modules\Identity\Http\Resources\Api\StaffUserResource;
 use App\Modules\Identity\StaffAccounts;
 use App\Modules\Identity\TwoFactor\TwoFactorAdministration;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -24,12 +26,18 @@ use Illuminate\Validation\ValidationException;
 /**
  * Staff accounts over the API — the API twin of the /users screens.
  *
- * **Community only.** Every route is behind `capability:users.manage`, so
- * a cloud install answers 403 `capability_unavailable`: managed
- * installations create staff accounts outside the application, and an API
- * that could mint them there would be a second, unmanaged door into the
- * same thing.
- * The routes are still registered in every edition so the committed
+ * Both editions since 2.2.0. Every route is behind
+ * `capability:users.manage`, which cloud installations now hold as well:
+ * a platform sells staff seats and the tenant fills them, so an API that
+ * creates one is the same door the screen is, not a second unmanaged one
+ * (see Capability::UsersManage). How many it may create is
+ * SeatAllowance's question, asked here through StaffAccounts, and an
+ * installation at its limit answers 422 rather than 403.
+ *
+ * The capability stays in front of the routes rather than being dropped:
+ * it is the seam an edition difference would have to travel through, and
+ * an installation without it answers 403 `capability_unavailable`. The
+ * routes are registered in every edition either way, so the committed
  * OpenAPI document is identical everywhere — the middleware refuses, the
  * route table does not lie.
  *
@@ -118,14 +126,18 @@ class UsersController extends Controller
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', new AvailableEmailRule],
             'role_id' => ['required', 'integer', Rule::in($this->accounts->assignableRoleIds($actor))],
             // No `confirmed`: repeating a password defends against a human
             // mistyping into a form, and an API caller has no second field
             // to mistype. Password::defaults() still applies.
             'password' => ['required', Password::defaults()],
             'assigned_clients' => ['array'],
-            'assigned_clients.*' => ['integer', Rule::exists('users', 'id')->where('type', UserType::Client->value)],
+            // Only clients you can reach yourself: an unrestricted account may
+            // assign any client, a client-scoped one only the clients already
+            // assigned to it. Assigning a client hands over everything that
+            // client can see, so it follows the same rule as role_id above.
+            'assigned_clients.*' => ['integer', Rule::in($this->accounts->assignableClientIds($actor))],
         ]);
 
         $user = $this->accounts->create([
@@ -163,18 +175,34 @@ class UsersController extends Controller
             'active' => ['sometimes', 'boolean'],
             'password' => ['sometimes', 'nullable', Password::defaults()],
             'assigned_clients' => ['sometimes', 'array'],
-            'assigned_clients.*' => ['integer', Rule::exists('users', 'id')->where('type', UserType::Client->value)],
+            // Only clients you can reach yourself: an unrestricted account may
+            // assign any client, a client-scoped one only the clients already
+            // assigned to it. Assigning a client hands over everything that
+            // client can see, so it follows the same rule as role_id above.
+            'assigned_clients.*' => ['integer', Rule::in($this->accounts->assignableClientIds($actor))],
         ]);
+
+        // Read through Request::boolean() rather than off the validated
+        // array, for the reason RolesController::guardScopeRemoval spells
+        // out: the `boolean` rule accepts 0 and "0" as well as false but
+        // does not cast, so a strict comparison lets through a value the
+        // model's own `boolean` cast then stores as false anyway. The same
+        // value goes to the guard and to the write.
+        $deactivating = array_key_exists('active', $validated) && ! $request->boolean('active');
 
         // The same refusal the web screen makes, and for the same reason:
         // locking yourself out is never what was meant.
-        if ($user->is($actor) && ($validated['active'] ?? true) === false) {
+        if ($user->is($actor) && $deactivating) {
             throw ValidationException::withMessages([
                 'active' => __('You cannot deactivate your own account.'),
             ]);
         }
 
-        $attributes = array_intersect_key($validated, array_flip(['name', 'email', 'active', 'password']));
+        $attributes = array_intersect_key($validated, array_flip(['name', 'email', 'password']));
+
+        if (array_key_exists('active', $validated)) {
+            $attributes['active'] = $request->boolean('active');
+        }
 
         if (array_key_exists('role_id', $validated)) {
             $attributes['role_id'] = (int) $validated['role_id'];
@@ -215,9 +243,15 @@ class UsersController extends Controller
 
         $validated = $this->accountDeletion->validate($request, $user);
 
-        $name = $this->accounts->delete($user);
-
-        $this->accountDeletion->apply($validated, $user, $name);
+        // Soft-deleting the account and disposing of its files are two
+        // separate writes; keep them in one transaction so a failure in the
+        // second (e.g. the reassignment target deleted between validation
+        // and apply()'s findOrFail) cannot leave the account deleted with
+        // its content still pointing at it.
+        DB::transaction(function () use ($validated, $user): void {
+            $name = $this->accounts->delete($user);
+            $this->accountDeletion->apply($validated, $user, $name);
+        });
 
         return response()->json(status: 204);
     }

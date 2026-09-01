@@ -90,8 +90,8 @@ list for your account.
 | `manage_groups` | list groups |
 
 | `moderate_comments` | list what is awaiting approval, and approve it |
-| `manage_users` | list staff accounts and the roles you may assign — **Community only** |
-| `create_users` / `edit_users` / `delete_users` | create, read and edit, delete staff accounts; `edit_users` also removes an account's two-factor authentication — **Community only** |
+| `manage_users` | list staff accounts and the roles you may assign |
+| `create_users` / `edit_users` / `delete_users` | create, read and edit, delete staff accounts; `edit_users` also removes an account's two-factor authentication |
 
 There is no ability for *writing* a comment. Who may comment is an installation setting rather than
 a per-role permission, so the file abilities are the gate — the same question the web asks, which is
@@ -192,6 +192,66 @@ deletions, that is what webhooks will be for; they are not built yet.
 
 ---
 
+## Reacting to things that happen
+
+Every list above answers "what is there now". `GET /api/v1/activity` answers "what happened", which
+is what an automation tool actually needs — and for two of the most useful events it is the only
+place to look.
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://your-install.example.com/api/v1/activity?action[]=file.assigned"
+```
+
+```json
+{
+  "data": [
+    {
+      "id": 1284,
+      "action": "file.assigned",
+      "created_at": "2026-08-25T09:14:02+00:00",
+      "actor": { "id": 3, "name": "Dana", "type": "staff" },
+      "origin": "ui",
+      "subject": { "type": "file", "id": 128, "name": "October invoice" },
+      "context": { "target": "Acme Ltd" }
+    }
+  ]
+}
+```
+
+**Sharing a file leaves no mark on the file.** It writes an assignment, and the file's own
+`updated_at` does not move — so polling `/files?updated_since=` will never show you a share, no
+matter how often you ask. The same goes for downloads, which are recorded here and nowhere else.
+
+Repeat `action` for more than one: `?action[]=file.assigned&action[]=file.downloaded`. An action
+this installation has never heard of is a `422` rather than being quietly dropped, because ignoring
+it would hand back the whole log to a caller who asked for one slice. `subject_type` narrows to one
+kind of thing — `file`, `folder`, `user`, `group`, `category`, `role`.
+
+Polling works as it does everywhere else. Entries are never edited, so `updated_since` walks the
+moment each was recorded; the two mean the same thing on a log that is only ever appended to.
+
+Needs `view_actions_log`, the same permission the activity screen uses, and the same scoping: a
+staff member limited to their assigned clients sees their own library and their own actions, never
+the whole installation's.
+
+**No IP addresses.** Some entries record one, and the activity screen shows it. It is left out here
+on purpose: handing a client's IP to an automation tool is a privacy question nobody asked to have
+answered for them.
+
+**Deletions work here too**, which is the one thing polling a list can never do. A deleted file
+stops being returned by `/files` and nothing marks the moment it went; the log records it as an
+event like any other, so `?action[]=file.deleted` tells you.
+
+One shape to know for those: a deletion entry has **no subject**. By the time it is written the row
+is gone, so what the thing was called is snapshotted into `context.name` instead. Read that rather
+than `subject.name` when you are reacting to something being removed.
+
+What this still cannot tell you is anything the log does not record, which is deliberately less than
+everything.
+
+---
+
 ## Uploading
 
 Two ways, and the right one depends on the file.
@@ -274,11 +334,10 @@ two are narrowed to what your token may see: a counterpart outside your reach re
 `/users` manages the people who administer the installation, and the role assigned to each of them.
 Clients are a different population with their own `/clients` endpoints and never appear here.
 
-**Community only.** Every endpoint under `/users` and `/roles` answers `403` with
-`type: capability_unavailable` on a managed installation, where staff accounts are created outside
-the application instead. The paths are still registered there, and still in this document, so that the
-specification is identical on every install — the refusal tells you why, where a missing route would
-not.
+Available on every edition. A managed installation may cap how many staff accounts exist — the
+operator supplies the number, and creating one past it is refused with a validation error naming the
+limit — but who fills those seats, and which role each of them holds, is the installation's own
+decision and always was.
 
 Two abilities are needed for each call: `manage_users` to reach the area at all, then the one for the
 action (`create_users`, `edit_users`, `delete_users`). That mirrors the web UI, where the whole

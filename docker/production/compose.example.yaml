@@ -41,6 +41,7 @@ services:
       # explicitly if you manage secrets elsewhere — but never change it on
       # a running install: it decrypts existing data.
       # APP_KEY: base64:...
+      # APP_KEY_FILE: /run/secrets/app_key
 
       DB_CONNECTION: mysql
       DB_HOST: db
@@ -48,6 +49,7 @@ services:
       DB_DATABASE: projectsend
       DB_USERNAME: projectsend
       DB_PASSWORD: change-me-database
+      # DB_PASSWORD_FILE: /run/secrets/db_password
 
       REDIS_HOST: redis
       CACHE_STORE: redis
@@ -62,6 +64,7 @@ services:
       MAIL_PORT: "587"
       MAIL_USERNAME: no-reply@tyreenet.com
       MAIL_PASSWORD: ""
+      # MAIL_PASSWORD_FILE: /run/secrets/mail_password
       MAIL_ENCRYPTION: tls
       MAIL_FROM_ADDRESS: no-reply@tyreenet.com
       MAIL_FROM_NAME: TyreeNet Send
@@ -77,6 +80,7 @@ services:
 
       MALWARE_SCAN_ENABLED: "true"
       MALWARE_SCAN_FAIL_CLOSED: "true"
+      MALWARE_REJECT_ENCRYPTED_ARCHIVES: "true"
       CLAMAV_HOST: clamav
       CLAMAV_PORT: "3310"
       CLAMAV_TIMEOUT: "300"
@@ -88,6 +92,9 @@ services:
       # ADMIN_NAME: Administrator
       # ADMIN_EMAIL: admin@example.com
       # ADMIN_PASSWORD: change-me-admin
+      # ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # WEBHOOK_URL: https://automation.example.test/hooks/tyreenet-send
+      # WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
     volumes:
       # Every uploaded file lives here, along with the generated APP_KEY.
       # This is the volume to back up; losing it loses the data.

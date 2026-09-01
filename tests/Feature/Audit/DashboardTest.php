@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\User;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLog;
+use App\Modules\Audit\ActivityOrigin;
 use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\ShareLink;
 use App\Modules\Groups\Models\Group;
@@ -314,4 +315,197 @@ test('clients get the portal dashboard with their own numbers', function () {
     );
 
     expect((string) $response->getContent())->not->toContain('Hidden');
+});
+
+test('the recent-activity widget carries origin so an actorless entry is not mislabelled', function () {
+    // An anonymous entry (a public/share-link download) and a system entry
+    // are both actor_name null; only `origin` separates "Anonymous" from
+    // "System" on the frontend. The dashboard used to rebuild the row inline
+    // and drop it, so every actorless entry showed as "System".
+    ActivityLog::query()->create([
+        'actor_id' => null, 'actor_name' => null, 'actor_type' => null,
+        'origin' => ActivityOrigin::Public,
+        'action' => Action::PublicFileDownloaded,
+        'subject_name' => 'report.pdf', 'created_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page
+            ->has('recent', 1)
+            ->where('recent.0.origin', 'public')
+            ->where('recent.0.actor_name', null),
+    );
+});
+
+test('the recent-activity widget shows a scoped viewer only what their own log would', function () {
+    // view_actions_log is not the whole answer for a client-scoped viewer:
+    // an entry carries the subject's name, so an unscoped widget reads out
+    // the name of every file in the installation to somebody who gets a
+    // 403 on the files themselves. The Client Manager role ships with the
+    // permission, so this is the default configuration, not an exotic one.
+    $role = Role::query()->create(['name' => 'Scoped log reader', 'client_scoped' => true]);
+    RolePermission::query()->insert([
+        ['role_id' => $role->id, 'permission' => 'view_actions_log'],
+        ['role_id' => $role->id, 'permission' => 'upload'],
+    ]);
+
+    $scoped = User::factory()->create(['role_id' => $role->id]);
+    $client = User::factory()->client()->create();
+    $scoped->assignedClients()->attach($client->id);
+
+    $theirs = File::factory()->create(['uploaded_by' => $this->admin->id, 'name' => 'Q3 delinquent accounts']);
+
+    $mine = File::factory()->create(['uploaded_by' => $this->admin->id, 'name' => 'Statement']);
+    shareFileWith($mine, $client);
+
+    foreach ([$theirs, $mine] as $file) {
+        ActivityLog::query()->create([
+            'actor_id' => $this->admin->id,
+            'actor_name' => $this->admin->name,
+            'actor_type' => $this->admin->type->value,
+            'action' => Action::FileUploaded,
+            'subject_type' => $file->getMorphClass(),
+            'subject_id' => $file->id,
+            'subject_name' => $file->name,
+            'created_at' => now(),
+        ]);
+    }
+
+    $this->actingAs($scoped)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page
+            ->has('recent', 1)
+            ->where('recent.0.replacements.subject', 'Statement'),
+    );
+});
+
+test('an unscoped viewer still sees the whole installation in the widget', function () {
+    $file = File::factory()->create(['uploaded_by' => $this->admin->id, 'name' => 'Anything']);
+
+    ActivityLog::query()->create([
+        'actor_id' => $this->admin->id,
+        'actor_name' => $this->admin->name,
+        'actor_type' => $this->admin->type->value,
+        'action' => Action::FileUploaded,
+        'subject_type' => $file->getMorphClass(),
+        'subject_id' => $file->id,
+        'subject_name' => 'Anything',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($this->admin)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page->has('recent', 1)->where('recent.0.replacements.subject', 'Anything'),
+    );
+});
+
+// The shipped Client Manager role is client-scoped and holds
+// view_statistics, so these three widgets are the default configuration,
+// not a custom one. A file's name is the part that leaks: "Q3 delinquent
+// accounts" says plenty without ever being downloadable.
+test('the statistics widgets name only files inside the viewer scope', function () {
+    $role = Role::query()->create(['name' => 'Scoped stats', 'client_scoped' => true]);
+    RolePermission::query()->insert([
+        ['role_id' => $role->id, 'permission' => 'view_statistics'],
+        ['role_id' => $role->id, 'permission' => 'upload'],
+    ]);
+
+    $scoped = User::factory()->create(['role_id' => $role->id]);
+    $client = User::factory()->client()->create();
+    $scoped->assignedClients()->attach($client->id);
+
+    $mine = File::factory()->create([
+        'uploaded_by' => $this->admin->id,
+        'name' => 'Statement',
+        'size' => 10_000,
+    ]);
+    shareFileWith($mine, $client);
+
+    // Expired files reach a scoped viewer only through their own uploads:
+    // File::scopeVisibleToClient ends in notExpired(), so an expired file
+    // belonging to one of their clients is not in their library at all.
+    $ownExpired = File::factory()->create([
+        'uploaded_by' => $scoped->id,
+        'name' => 'My Own Expired',
+        'size' => 1_000,
+        'expires_at' => now()->subDay(),
+    ]);
+
+    // Bigger, sooner-expired, and none of this viewer's business.
+    File::factory()->create([
+        'uploaded_by' => $this->admin->id,
+        'name' => 'Q3 delinquent accounts',
+        'size' => 99_000_000,
+        'expires_at' => now()->subDays(5),
+    ]);
+
+    $this->actingAs($scoped)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page
+            ->has('largest_files', 2)
+            ->where('largest_files.0.name', 'Statement')
+            ->where('largest_files.1.name', 'My Own Expired')
+            ->has('expired_files.files', 1)
+            ->where('expired_files.files.0.name', 'My Own Expired')
+            // The count has to agree with the list, or the number
+            // describes files the list is not allowed to name.
+            ->where('expired_files.count', 1)
+            // And the widget has to say which list it is: a warning about
+            // what is due to be deleted, showing only the viewer's own
+            // uploads, reads as "nothing to worry about" otherwise.
+            ->where('expired_files.scoped', true),
+    );
+});
+
+test('an unscoped viewer still sees the whole installation in those widgets', function () {
+    File::factory()->create([
+        'uploaded_by' => $this->admin->id,
+        'name' => 'Anything',
+        'size' => 5_000,
+        'expires_at' => now()->subDay(),
+    ]);
+
+    $this->actingAs($this->admin)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page
+            ->where('largest_files.0.name', 'Anything')
+            ->where('expired_files.count', 1)
+            // Unscoped: the widget keeps its plain title and its plain
+            // meaning, everything expired on the installation.
+            ->where('expired_files.scoped', false),
+    );
+});
+
+// The top-clients widget names clients, so the roster is the question,
+// not the library. A stranger's upload can sit inside a scoped viewer's
+// library — shared with a group one of their own clients is in — which
+// put the stranger's name on the widget while the file itself was
+// legitimately visible.
+test('the top-clients widget names only clients on the viewer roster', function () {
+    $role = Role::query()->create(['name' => 'Scoped stats roster', 'client_scoped' => true]);
+    RolePermission::query()->insert([
+        ['role_id' => $role->id, 'permission' => 'view_statistics'],
+        ['role_id' => $role->id, 'permission' => 'upload'],
+    ]);
+
+    $viewer = User::factory()->create(['role_id' => $role->id]);
+    $mine = User::factory()->client()->create(['name' => 'My Own Client']);
+    $viewer->assignedClients()->attach($mine->id);
+
+    $stranger = User::factory()->client()->create(['name' => 'Stranger Client Ltd']);
+
+    // Both clients are in one group, and the stranger's upload is shared
+    // with it — so my client may legitimately read the file, and the
+    // file is legitimately inside my library.
+    $group = Group::query()->create(['name' => 'Shared', 'slug' => 'shared-stats', 'public' => false]);
+    $group->members()->syncWithoutDetaching([$mine->id, $stranger->id]);
+
+    $file = File::factory()->create(['uploaded_by' => $stranger->id, 'name' => 'Theirs', 'size' => 5_000_000]);
+    shareFileWithGroup($file, $group);
+
+    // Something of my own client's, so the widget is not empty for the
+    // wrong reason.
+    File::factory()->create(['uploaded_by' => $mine->id, 'name' => 'Ours', 'size' => 1_000]);
+
+    $this->actingAs($viewer)->get('/dashboard')->assertInertia(
+        fn (AssertableInertia $page) => $page
+            ->has('top_clients_by_storage', 1)
+            ->where('top_clients_by_storage.0.name', 'My Own Client'),
+    );
 });

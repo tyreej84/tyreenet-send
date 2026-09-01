@@ -12,8 +12,20 @@ use App\Modules\Identity\Permissions\Permission;
 use App\Modules\Identity\Permissions\SystemRole;
 use App\Modules\Platform\Settings\Setting;
 use App\Modules\Platform\Settings\Settings;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
+
+/**
+ * Where this worker's parts live. Not storage_path('app/uploads-tmp')
+ * directly: each parallel worker gets its own root (see Tests\TestCase),
+ * because session ids restart at 1 in every worker's database and the
+ * cleanup below would otherwise delete the others' parts mid-test.
+ */
+function partsRoot(): string
+{
+    return (string) config('projectsend.uploads.parts_path');
+}
 
 function grantChunkedUploadPermission(User $user): void
 {
@@ -26,7 +38,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    Illuminate\Support\Facades\File::deleteDirectory(storage_path('app/uploads-tmp'));
+    Illuminate\Support\Facades\File::deleteDirectory(partsRoot());
 });
 
 function createSession(int $size = 1024, string $filename = 'big.zip'): string
@@ -103,7 +115,7 @@ test('complete assembles parts in order into a verified File record', function (
         ->and($file->checksum)->toBe(hash('sha256', 'hello-world'))
         ->and(Storage::disk('files')->get($file->path))->toBe('hello-world')
         ->and(UploadSession::query()->find($sessionId))->toBeNull()
-        ->and(is_dir(storage_path('app/uploads-tmp/'.$sessionId)))->toBeFalse()
+        ->and(is_dir(partsRoot().'/'.$sessionId))->toBeFalse()
         ->and(ActivityLog::query()->where('action', Action::FileUploaded)->where('subject_name', 'assembled')->exists())->toBeTrue();
 });
 
@@ -152,6 +164,41 @@ test('a staff account without the upload permission cannot create sessions', fun
     $this->postJson('/uploads', ['filename' => 'x.zip', 'size' => 10])->assertForbidden();
 });
 
+test('complete refuses a file whose real assembled size exceeds the limit, even when a tiny size was declared', function () {
+    $this->actingAs($this->admin);
+
+    // A 1 MB cap. The session is declared as a single byte, so it sails
+    // through store()'s check against the client-supplied size.
+    app(Settings::class)->set(Setting::MaxFileSizeMb, 1);
+    $sessionId = createSession(1, 'sneaky.zip');
+
+    // But the real parts stream ~1.5 MB.
+    $chunk = str_repeat('a', 800 * 1024);
+    putPart($sessionId, 1, $chunk)->assertOk();
+    putPart($sessionId, 2, $chunk)->assertOk();
+
+    $this->postJson("/uploads/{$sessionId}/complete")->assertStatus(422);
+
+    // Nothing is kept: no File row, the assembled bytes are removed, and the
+    // session is gone.
+    expect(File::query()->count())->toBe(0)
+        ->and(UploadSession::query()->find($sessionId))->toBeNull()
+        ->and(Storage::disk('files')->allFiles())->toBe([]);
+});
+
+test('complete still accepts a file at exactly the limit', function () {
+    $this->actingAs($this->admin);
+
+    app(Settings::class)->set(Setting::MaxFileSizeMb, 1);
+    $sessionId = createSession(1024 * 1024, 'exact.zip');
+
+    putPart($sessionId, 1, str_repeat('a', 1024 * 1024))->assertOk();
+
+    $response = $this->postJson("/uploads/{$sessionId}/complete")->assertOk();
+
+    expect(File::query()->findOrFail($response->json('file_id'))->size)->toBe(1024 * 1024);
+});
+
 test('a client with the upload permission can create a session and complete an upload', function () {
     $client = User::factory()->client()->create();
     grantChunkedUploadPermission($client);
@@ -192,7 +239,7 @@ test('abort deletes parts and the purge command clears only stale sessions', fun
     $aborted = createSession();
     putPart($aborted, 1, 'data');
     $this->deleteJson("/uploads/{$aborted}")->assertNoContent();
-    expect(is_dir(storage_path('app/uploads-tmp/'.$aborted)))->toBeFalse()
+    expect(is_dir(partsRoot().'/'.$aborted))->toBeFalse()
         ->and(UploadSession::query()->find($aborted))->toBeNull();
 
     $fresh = createSession(100, 'fresh.zip');
@@ -280,4 +327,96 @@ test('a storage backend that refuses the write fails the upload instead of recor
 
     // The point of the whole test: no row for bytes that were never stored.
     expect(File::query()->count())->toBe($before);
+});
+
+// A chunked upload is two requests, and store()'s rule only ever sees the
+// first one. Delete the folder while the bytes are in flight and the
+// session still names it -- the version of this that nobody can ask for
+// in a single request.
+test('a folder deleted mid-upload does not swallow the finished file', function () {
+    $folder = app(\App\Modules\Files\Folders\FolderService::class)->create('Doomed', null);
+
+    $this->actingAs($this->admin);
+
+    $session = $this->postJson('/uploads', [
+        'filename' => 'report.pdf',
+        'size' => 11,
+        'type' => 'application/pdf',
+        'folder_id' => $folder->id,
+    ])->assertOk()->json('uploadId');
+
+    putPart($session, 1, 'hello world')->assertOk();
+
+    // Somebody empties the folder while the transfer is running. Deleting
+    // a folder deletes every file in its subtree, so anything filed into
+    // it afterwards sits inside a folder that was already emptied.
+    app(\App\Modules\Files\Folders\FolderService::class)->delete($folder);
+
+    $fileId = $this->postJson("/uploads/{$session}/complete")->assertOk()->json('file_id');
+
+    // The bytes are kept -- they are already uploaded, and discarding
+    // somebody's finished transfer over a folder that vanished under them
+    // is the harsher surprise. They land at the root, where the uploader
+    // can see them and move them.
+    expect(File::query()->whereKey($fileId)->value('folder_id'))->toBeNull();
+});
+
+test('a folder that survives the upload still receives the file', function () {
+    $folder = app(\App\Modules\Files\Folders\FolderService::class)->create('Fine', null);
+
+    $this->actingAs($this->admin);
+
+    $session = $this->postJson('/uploads', [
+        'filename' => 'report.pdf',
+        'size' => 11,
+        'type' => 'application/pdf',
+        'folder_id' => $folder->id,
+    ])->assertOk()->json('uploadId');
+
+    putPart($session, 1, 'hello world')->assertOk();
+
+    $fileId = $this->postJson("/uploads/{$session}/complete")->assertOk()->json('file_id');
+
+    expect(File::query()->whereKey($fileId)->value('folder_id'))->toBe($folder->id);
+});
+
+// The isolation itself cannot be observed from inside one test, but the
+// mechanism it rests on can: parts go where the configured root says, so
+// giving each worker its own root actually holds them apart.
+test('parts are written under the configured root', function () {
+    $this->actingAs($this->admin);
+
+    $custom = storage_path('app/uploads-tmp/somewhere-else');
+    config(['projectsend.uploads.parts_path' => $custom]);
+
+    $sessionId = createSession(1024);
+    putPart($sessionId, 1, 'hello')->assertOk();
+
+    expect(is_file($custom.'/'.$sessionId.'/1.part'))->toBeTrue()
+        ->and(is_dir(storage_path('app/uploads-tmp/'.$sessionId)))->toBeFalse();
+
+    Illuminate\Support\Facades\File::deleteDirectory($custom);
+});
+
+test('a second complete is refused while one is already finalising the session', function () {
+    $this->actingAs($this->admin);
+    $sessionId = createSession(11, 'locked.txt');
+    putPart($sessionId, 1, 'hello-');
+    putPart($sessionId, 2, 'world');
+
+    // Stand in for a completion already in flight by holding the session's
+    // lock — a concurrent complete must not assemble the same target file a
+    // second time or create a second File row.
+    $lock = Cache::lock('upload-complete:'.$sessionId, 120);
+    expect($lock->get())->toBeTrue();
+
+    $this->postJson("/uploads/{$sessionId}/complete")->assertStatus(422);
+
+    expect(File::query()->count())->toBe(0)
+        ->and(UploadSession::query()->find($sessionId))->not->toBeNull();
+
+    // Once the in-flight completion releases the lock, completing works.
+    $lock->release();
+    $this->postJson("/uploads/{$sessionId}/complete")->assertOk();
+    expect(File::query()->count())->toBe(1);
 });

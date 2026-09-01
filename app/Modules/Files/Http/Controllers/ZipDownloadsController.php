@@ -15,12 +15,16 @@ use App\Modules\Files\Models\File;
 use App\Modules\Files\Models\Folder;
 use App\Modules\Files\Models\ZipDownload;
 use App\Modules\Files\Uploads\StoreUploadedFile;
+use App\Modules\Platform\Settings\Setting;
+use App\Modules\Platform\Settings\Settings;
 use App\Support\ContentDisposition;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Number;
 
 /**
  * A folder's "Download as zip" button and the file listing's multi-select
@@ -40,12 +44,29 @@ class ZipDownloadsController extends Controller
         private readonly ActivityLogger $activity,
         private readonly ViewableFileScope $viewable,
         private readonly DownloadAllowance $allowance,
+        private readonly Settings $settings,
     ) {}
 
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
         assert($user !== null);
+
+        // One build at a time per requester. A zip holds the queue worker
+        // for as long as it takes to write, and everything else — every
+        // notification email — waits behind it, so a queue of them from
+        // one person is everyone else's outage. An hour old is treated as
+        // abandoned rather than in progress: BuildZipDownloadJob::failed()
+        // resolves a row the worker gave up on, but a worker killed hard
+        // enough never runs it, and nobody should be locked out forever by
+        // a row nothing will ever finish.
+        $inFlight = ZipDownload::query()
+            ->where('requested_by', $user->id)
+            ->where('status', ZipDownload::STATUS_PENDING)
+            ->where('created_at', '>', now()->subHour())
+            ->exists();
+
+        abort_if($inFlight, 429, __('A zip download is already being prepared. Wait for that one to finish before starting another.'));
 
         $validated = $request->validate([
             'file_ids' => ['array'],
@@ -98,8 +119,31 @@ class ZipDownloadsController extends Controller
             fn (Folder $folder): int => (clone $visible)->whereIn('folder_id', $folder->subtreeFolderIds())->count(),
         );
 
+        // Measured the same way, and deliberately without the allowance
+        // filter the loose-file branch applies: a folder's total can only
+        // come out at or above what the archive will really weigh, and an
+        // over-estimate is the safe direction for a cap.
+        $totalSize = (int) $files->sum('size') + (int) $folders->sum(
+            fn (Folder $folder): int => (int) (clone $visible)->whereIn('folder_id', $folder->subtreeFolderIds())->sum('size'),
+        );
+
         abort_if($fileCount === 0, 422, __('The selected folders are empty.'));
         abort_if($fileCount > self::MAX_FILES, 422, __('Too many files selected. Choose a smaller selection and try again.'));
+
+        // Bytes, not file count, are what a build costs — worker time, the
+        // temp copies a remote disk needs, and the archive on disk. The
+        // message names both numbers because "too big" without them leaves
+        // someone guessing how much to deselect.
+        $maxBytes = (int) $this->settings->get(Setting::MaxZipDownloadSizeMb) * 1024 * 1024;
+
+        abort_if(
+            $maxBytes > 0 && $totalSize > $maxBytes,
+            422,
+            __('That selection is :size. Zip downloads are limited to :limit — select fewer files and try again.', [
+                'size' => Number::fileSize($totalSize, precision: 1),
+                'limit' => Number::fileSize($maxBytes),
+            ]),
+        );
 
         $zipDownload = ZipDownload::query()->create([
             'requested_by' => $user->id,
@@ -137,8 +181,7 @@ class ZipDownloadsController extends Controller
         // Only the first time. Re-fetching one prepared archive is the
         // same delivery, not a fresh download of everything inside it.
         if ($zipDownload->delivered_at === null) {
-            $this->logContainedDownloads($zipDownload, $user);
-            $zipDownload->forceFill(['delivered_at' => now()])->save();
+            $this->deliverOnce($zipDownload, $user);
         }
 
         $size = Storage::disk('files')->size($path);
@@ -152,14 +195,81 @@ class ZipDownloadsController extends Controller
     }
 
     /**
-     * Every file actually bundled gets a FileDownloaded entry — otherwise
-     * a file's download history/count would silently miss zip downloads.
+     * Hand the archive over, once: refuse it if anything inside is out of
+     * allowance, otherwise count everything it holds as downloaded.
+     *
+     * This is the only point that spends a download limit, which is why
+     * it also has to be the point that enforces it. Building an archive
+     * takes nothing, so ordering the same limited file into any number of
+     * archives passes every check on the way — store() and the job both
+     * look at an allowance nothing has drawn on yet — and collecting them
+     * all afterwards would hand over more copies than the limit allows.
+     *
+     * One refused file refuses the whole delivery, because nothing can be
+     * taken out of a finished archive without building it again. Ordering
+     * the same selection afresh is the way through: the build leaves the
+     * spent file out and names it in skipped_files.
+     *
+     * An archive from before the job recorded its contents is handed over
+     * the way it always was, without this check. Its contents can only be
+     * guessed at by resolving the selection again, and guessing is exactly
+     * what must not decide a refusal: the same reconstruction both refuses
+     * over files the archive does not hold and misses files it does. Those
+     * rows stop existing within a day or two of an upgrade, and until then
+     * they behave as they did before this change rather than worse.
      */
-    private function logContainedDownloads(ZipDownload $zipDownload, User $requester): void
+    private function deliverOnce(ZipDownload $zipDownload, User $requester): void
     {
-        // Same per-file filter the job used to decide what actually went
-        // into the archive, so the log records what was really downloaded
-        // rather than everything that happened to sit in the folder.
+        $recorded = $zipDownload->contained_file_ids;
+
+        // What the job wrote down, read back as it stands — deliberately
+        // not filtered by what the requester may see today. The bytes are
+        // in the archive already, so a file that has since expired or left
+        // their scope is still being given to them, and a count that
+        // quietly dropped it would understate what was taken.
+        $contained = $recorded === null
+            ? $this->resolveSelection($zipDownload, $requester)
+            : File::query()->whereIn('id', $recorded)->get();
+
+        abort_if(
+            $recorded !== null
+                && $contained->contains(fn (File $file): bool => ! $this->allowance->allows($file, $requester)),
+            403,
+            __('Those files have reached their download limit.'),
+        );
+
+        // Atomic, so two fetches arriving together are still one delivery:
+        // only the request that actually moves delivered_at logs anything.
+        // Same reasoning as the conditional increment guarding a share
+        // link's max_downloads in PublicShareController. The other request
+        // still receives the archive — that is the re-fetch rule above.
+        $claimed = ZipDownload::query()
+            ->whereKey($zipDownload->id)
+            ->whereNull('delivered_at')
+            ->update(['delivered_at' => now()]);
+
+        if ($claimed === 0) {
+            return;
+        }
+
+        // Every file actually bundled gets a FileDownloaded entry —
+        // otherwise a file's download history/count would silently miss
+        // zip downloads.
+        foreach ($contained as $file) {
+            $this->activity->log(Action::FileDownloaded, subject: $file);
+        }
+    }
+
+    /**
+     * What an archive built before the job recorded its contents is taken
+     * to hold: the selection, resolved again, which is how this worked
+     * throughout. Only reachable for rows written by an older release,
+     * and PurgeZipDownloadsCommand removes those within a day.
+     *
+     * @return Collection<int, File>
+     */
+    private function resolveSelection(ZipDownload $zipDownload, User $requester): Collection
+    {
         $visible = $this->viewable->for($requester);
         $fileIds = collect($zipDownload->file_ids);
 
@@ -177,9 +287,7 @@ class ZipDownloadsController extends Controller
         // further past it.
         $skipped = collect($zipDownload->skipped_files ?? [])->pluck('id')->all();
 
-        foreach ((clone $visible)->whereIn('id', $fileIds->unique())->whereNotIn('id', $skipped)->get() as $file) {
-            $this->activity->log(Action::FileDownloaded, subject: $file);
-        }
+        return (clone $visible)->whereIn('id', $fileIds->unique())->whereNotIn('id', $skipped)->get();
     }
 
     private function filenameFor(ZipDownload $zipDownload): string

@@ -4,12 +4,31 @@ updates:
     directory: /
     schedule: { interval: weekly, day: monday, time: "09:00", timezone: America/New_York }
     groups:
-      php-dependencies: { patterns: ["*"] }
+      php-runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+        patterns: ["*"]
+      php-development:
+        dependency-type: development
+        update-types: [minor, patch]
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /
     schedule: { interval: weekly, day: monday, time: "09:15", timezone: America/New_York }
     groups:
-      frontend-dependencies: { patterns: ["*"] }
+      react-ui:
+        update-types: [minor, patch]
+        patterns: ["react", "react-dom", "@types/react*", "@radix-ui/*", "@headlessui/*", "lucide-react", "recharts"]
+      build-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+        patterns: ["vite", "@vitejs/*", "typescript", "eslint*", "@eslint/*", "prettier*"]
+      frontend-runtime:
+        dependency-type: production
+        update-types: [minor, patch]
+        exclude-patterns: ["react", "react-dom", "@types/react*", "@radix-ui/*", "@headlessui/*", "lucide-react", "recharts"]
+        patterns: ["*"]
+    open-pull-requests-limit: 10
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: monthly }

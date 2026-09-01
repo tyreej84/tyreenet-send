@@ -9,8 +9,11 @@ use App\Models\User;
 use App\Modules\Api\ApiUsage;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLog;
+use App\Modules\Audit\ActivityLogScope;
+use App\Modules\Audit\ActivityPresenter;
 use App\Modules\Audit\DashboardWidgetPreferences;
 use App\Modules\Clients\ClientStorageUsage;
+use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\Models\File;
 use App\Modules\Groups\Models\Group;
 use App\Modules\Identity\UserType;
@@ -24,6 +27,7 @@ use App\Modules\Platform\Settings\Settings;
 use App\Modules\Platform\Storage\StorageDurability;
 use App\Modules\Platform\System\SystemEnvironment;
 use App\Modules\Platform\Updates\LatestReleaseInfo;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -50,6 +54,9 @@ class DashboardController extends Controller
         private readonly Installation $installation,
         private readonly TimezoneRegistry $timezones,
         private readonly SystemEnvironment $environment,
+        private readonly ActivityPresenter $presenter,
+        private readonly ActivityLogScope $scope,
+        private readonly StaffLibraryScope $library,
     ) {}
 
     public function __invoke(Request $request): Response
@@ -81,10 +88,10 @@ class DashboardController extends Controller
                 ? ['preset' => $preset, 'from' => $from->toDateString(), 'to' => $to->toDateString()]
                 : null,
             'top_clients_by_storage' => $canStatistics && $prefs->isEnabled($user, 'top_clients_by_storage')
-                ? $this->topClientsByStorage()
+                ? $this->topClientsByStorage($user)
                 : null,
             'largest_files' => $canStatistics && $prefs->isEnabled($user, 'largest_files') ? $this->largestFiles($user) : null,
-            'recent' => $canActionsLog && $prefs->isEnabled($user, 'recent') ? $this->recentActivity() : null,
+            'recent' => $canActionsLog && $prefs->isEnabled($user, 'recent') ? $this->recentActivity($user) : null,
             'system' => $canSystem && $prefs->isEnabled($user, 'system') ? $this->systemInfo() : null,
             // Both editions — informational content, not an update action,
             // so no Capability check alongside the permission (unlike
@@ -206,6 +213,12 @@ class DashboardController extends Controller
      */
     private function counters(): array
     {
+        // Deliberately installation-wide, unlike the three widgets below.
+        // A total carries no names — "417 files" tells a scoped viewer
+        // nothing about whose they are — and the same reasoning leaves
+        // transferSeries() alone. If that ever stops being the line, both
+        // move together.
+
         return [
             'files' => File::query()->count(),
             'files_bytes' => (int) File::query()->sum('size'),
@@ -276,11 +289,21 @@ class DashboardController extends Controller
      *
      * @return list<array{id: int, name: string, used_bytes: int, quota_mb: int}>
      */
-    private function topClientsByStorage(): array
+    private function topClientsByStorage(User $viewer): array
     {
+        // Narrowed by roster, not by library. This widget names *clients*,
+        // and files() is the wrong lens for that: a stranger client's
+        // upload can be inside a scoped viewer's library — shared with a
+        // group one of their own clients is in — which put the stranger's
+        // name on the widget. Measured: a client called "Stranger Client
+        // Ltd", on nobody's roster, ranked on a scoped dashboard.
+        // assignableClientIds is the question actually being asked.
+        $clientIds = $this->library->assignableClientIds($viewer);
+
         $rows = File::query()
             ->select('uploaded_by', DB::raw('SUM(size) as total_bytes'))
             ->whereHas('uploader', fn ($query) => $query->where('type', UserType::Client))
+            ->when($clientIds !== null, fn (Builder $query) => $query->whereIn('uploaded_by', $clientIds))
             ->groupBy('uploaded_by')
             ->orderByDesc('total_bytes')
             ->limit(5)
@@ -338,7 +361,14 @@ class DashboardController extends Controller
         $staffModule = $this->capabilities->has(Capability::UsersManage) && $viewer->can('manage_users');
         $canStaffUsers = $staffModule && $viewer->can('edit_users');
 
-        return array_values(File::query()
+        // Narrowed to the viewer's library, not just its links. The
+        // note above is about a link that 403s; a row that should not be
+        // here at all is a different problem, and the file's *name* is
+        // the part that leaks — "Q3 delinquent accounts" says plenty
+        // without being downloadable. Scoping the query costs one call:
+        // StaffLibraryScope builds a scoped user's query once per
+        // request, so this is not a per-row check.
+        return array_values($this->library->files($viewer)
             ->with('uploader:id,name,type')
             ->orderByDesc('size')
             ->limit(10)
@@ -377,8 +407,21 @@ class DashboardController extends Controller
         $canFiles = $viewer->can('upload') || $viewer->can('edit_files') || $viewer->can('edit_others_files');
 
         return [
-            'count' => File::query()->expired()->count(),
-            'files' => array_values(File::query()->expired()->orderBy('expires_at')->limit(10)
+            // Both the count and the list read the viewer's library, so
+            // the number cannot describe files the list is not allowed to
+            // name. Same reason largestFiles() is scoped.
+            //
+            // Narrower than it looks for a client-scoped viewer:
+            // File::scopeVisibleToClient ends in notExpired(), so an
+            // expired file belonging to one of their clients is not in
+            // their library, and only their own expired uploads reach
+            // this list. Rather than widen the boundary — which would
+            // mean a library query that keeps expired rows, and
+            // scopeVisibleToClient is the single source of truth for
+            // client file access — the widget says what it is showing.
+            // `scoped` is how it knows to.
+            'count' => $this->library->files($viewer)->expired()->count(),
+            'files' => array_values($this->library->files($viewer)->expired()->orderBy('expires_at')->limit(10)
                 ->get(['id', 'name', 'expires_at'])
                 ->map(fn (File $file): array => [
                     'id' => $file->id,
@@ -386,6 +429,10 @@ class DashboardController extends Controller
                     'expires_at' => $file->expires_at?->toIso8601String(),
                     'edit_url' => $canFiles ? route('files.edit', $file->id, false) : null,
                 ])->all()),
+            // Whether this list is "everything expired" or "everything of
+            // yours that expired" — a widget whose whole job is warning
+            // about what is due to be deleted has to say which it means.
+            'scoped' => $viewer->isClientScoped(),
             'auto_delete_enabled' => (bool) $this->settings->get(Setting::ExpiredFilesAutoDeleteEnabled),
             // Schedule::command('projectsend:purge-expired-files')->daily()
             // runs at 00:00 — always "tonight" from whenever this loads.
@@ -396,28 +443,27 @@ class DashboardController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function recentActivity(): array
+    private function recentActivity(User $viewer): array
     {
-        return ActivityLog::query()
+        // Narrowed through ActivityLogScope, exactly as the activity page and
+        // the download history are. `view_actions_log` is not the whole
+        // answer for a client-scoped viewer: a log entry carries the
+        // subject's name, so an unscoped one reads out the name of every
+        // file in the installation and who touched it, to somebody who gets
+        // a 403 on the files themselves. The Client Manager role ships with
+        // the permission, so this is the default configuration.
+        //
+        // Presented through the shared ActivityPresenter, not rebuilt inline —
+        // the same sentence-ready shape the activity page and detail panels
+        // use. Rebuilding it here once dropped `origin`, which is the only
+        // thing that tells an actorless "Anonymous" entry from a "System" one.
+        return $this->scope->apply(ActivityLog::query(), $viewer)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit(8)
             ->get()
-            ->map(fn (ActivityLog $entry): array => [
-                'id' => $entry->id,
-                'created_at' => $entry->created_at->toIso8601String(),
-                'actor_name' => $entry->actor_name,
-                'actor_type' => $entry->actor_type,
-                'template' => $entry->action->template(),
-                'replacements' => [
-                    'subject' => $entry->subject_name
-                        ?? ($entry->subject_id !== null ? __('(deleted account)') : ''),
-                    ...collect($entry->context ?? [])
-                        ->filter(fn ($value): bool => is_scalar($value))
-                        ->map(fn ($value): string => (string) $value)
-                        ->all(),
-                ],
-            ])->all();
+            ->map(fn (ActivityLog $entry): array => $this->presenter->present($entry))
+            ->all();
     }
 
     /**

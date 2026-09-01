@@ -115,9 +115,27 @@ SECURITY_ALERT_DOWNLOAD_THRESHOLD=25
 SECURITY_ALERT_DOWNLOAD_WINDOW_MINUTES=10
 ```
 
+## Signed outbound webhooks
+
+Set `WEBHOOK_URL` and mount `WEBHOOK_SECRET_FILE` to deliver every audit event to an
+automation endpoint. Deliveries include `X-TyreeNet-Event`, `X-TyreeNet-Timestamp`,
+and `X-TyreeNet-Signature`; verify the signature as the HMAC-SHA256 of
+`<timestamp>.<raw request body>`. Failed deliveries retry with backoff and appear on
+the Security page. Replay one with `php artisan projectsend:webhook-replay <id>`.
+
+## Secret files
+
+The production entrypoint accepts `APP_KEY_FILE`, `DB_PASSWORD_FILE`,
+`MAIL_PASSWORD_FILE`, `ADMIN_PASSWORD_FILE`, `AWS_ACCESS_KEY_ID_FILE`,
+`AWS_SECRET_ACCESS_KEY_FILE`, and `WEBHOOK_SECRET_FILE`. An explicitly set value
+wins over its `_FILE` counterpart. Prefer read-only Docker secrets under
+`/run/secrets` to plaintext values in the Compose environment.
+
 ## Monitoring
 
 - Probe `https://send.tyreenet.com/up` from an external monitor every minute.
+- For dependency-level readiness, probe authenticated `GET /system/health`; it checks
+  database, Redis, writable storage, scheduler recency, and ClamAV reachability.
 - Alert after three consecutive failures.
 - Review **System → Settings → Scheduler** for failed scheduled tasks, pending mail, and failed queue jobs.
 - The dashboard warns when local file storage is running low.

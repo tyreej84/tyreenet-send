@@ -24,11 +24,13 @@ use App\Modules\Identity\UserType;
 use App\Modules\Notifications\Notifier;
 use App\Modules\Platform\Settings\Setting;
 use App\Modules\Platform\Settings\Settings;
+use App\Support\Rules;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -71,7 +73,7 @@ class ChunkedUploadsController extends Controller
             'size' => ['required', 'integer', 'min:1'],
             'type' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'folder_id' => ['nullable', 'integer', 'exists:folders,id'],
+            'folder_id' => Rules::folderId(),
             'previous_file_id' => ['nullable', 'integer'],
         ]);
 
@@ -240,6 +242,33 @@ class ChunkedUploadsController extends Controller
         $user = $request->user();
         assert($user !== null);
 
+        // Serialise completion per session: two concurrent completes (an Uppy
+        // retry, a double submit, a lost-connection resend) would otherwise
+        // both assemble into the one target file and create two File rows.
+        // The lock's TTL releases the claim if a completion dies mid-flight,
+        // so a later retry still works.
+        $lock = Cache::lock('upload-complete:'.$session->id, 120);
+
+        if (! $lock->get()) {
+            throw ValidationException::withMessages([
+                'parts' => __('This upload is already being finalised.'),
+            ]);
+        }
+
+        try {
+            return $this->finalise($session, $user);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Assemble a session's received parts into a stored File. Runs under
+     * complete()'s per-session lock, so it is the single writer to the
+     * session's target path and the only creator of its File row.
+     */
+    private function finalise(UploadSession $session, User $user): JsonResponse
+    {
         $extension = strtolower(pathinfo($session->original_name, PATHINFO_EXTENSION));
         $targetPath = now()->format('Y/m').'/'.Str::uuid()->toString().($extension !== '' ? '.'.$extension : '');
 
@@ -247,6 +276,22 @@ class ChunkedUploadsController extends Controller
             $assembled = $this->parts->assemble($session, $targetPath);
         } catch (\RuntimeException $exception) {
             throw ValidationException::withMessages(['parts' => $exception->getMessage()]);
+        }
+
+        // store()'s size check ran against the client-declared, unverified
+        // size, so a small declared size would otherwise let an upload of any
+        // size through here. Re-check the real assembled byte count against
+        // the same limit store() applies to everyone. No File row exists yet
+        // at this point, so cleanup only needs to undo what assemble() wrote.
+        $maxMb = (int) $this->settings->get(Setting::MaxFileSizeMb);
+
+        if ($maxMb > 0 && $assembled['size'] > $maxMb * 1024 * 1024) {
+            Storage::disk($assembled['disk'])->delete($assembled['path']);
+            $session->delete();
+
+            throw ValidationException::withMessages([
+                'size' => __('This file exceeds the maximum allowed size of :max MB.', ['max' => (string) $maxMb]),
+            ]);
         }
 
         // store()'s quota check used a client-declared, unverified size —
@@ -272,6 +317,23 @@ class ChunkedUploadsController extends Controller
         // the previewer's browser. Detect the real mime type from the assembled bytes.
         $mimeType = Storage::disk($assembled['disk'])->mimeType($assembled['path']) ?: 'application/octet-stream';
 
+        // Re-resolved rather than taken from the session. A chunked
+        // upload is two requests, and store()'s rule only ever sees the
+        // first: delete the folder while the bytes are in flight and the
+        // recorded id names a folder whose own deletion already removed
+        // every file in it. Filing into it would recreate exactly the
+        // state Rules::folderId() exists to prevent.
+        //
+        // The root, rather than a refusal, because the two moments cost
+        // different things. At store() nothing has been sent, so refusing
+        // is free and honest. Here the bytes are already uploaded, and
+        // throwing away somebody's finished transfer over a folder that
+        // vanished underneath them is the harsher of the two surprises —
+        // the file lands somewhere they can see it and move it.
+        $folderId = $session->folder_id !== null && Folder::query()->whereKey($session->folder_id)->exists()
+            ? $session->folder_id
+            : null;
+
         $file = $this->storeFile->create(
             uploader: $user,
             originalName: $session->original_name,
@@ -280,7 +342,7 @@ class ChunkedUploadsController extends Controller
             size: $assembled['size'],
             checksum: $assembled['checksum'],
             description: $session->description,
-            folderId: $session->folder_id,
+            folderId: $folderId,
             disk: $assembled['disk'],
         );
 

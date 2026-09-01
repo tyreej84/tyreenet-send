@@ -336,16 +336,39 @@ test('reassigning a deleted staff user\'s content transfers ownership and logs a
         ->and(ActivityLog::query()->where('action', Action::AccountContentReassigned)->exists())->toBeTrue();
 });
 
+test('a failure while disposing of a deleted staff account\'s content rolls the deletion back', function () {
+    $adminUser = admin();
+    $user = User::factory()->role(SystemRole::Uploader)->create();
+    $reassignTarget = User::factory()->role(SystemRole::Uploader)->create();
+
+    failAccountContentDisposal();
+
+    $this->actingAs($adminUser)->delete("/users/{$user->id}", [
+        'content_action' => 'reassign',
+        'reassign_to_id' => $reassignTarget->id,
+    ])->assertStatus(500);
+
+    // The soft-delete and its log belong to the same transaction as the
+    // content step, so a failure there leaves the account intact rather than
+    // deleted-but-still-owning-files.
+    expect(User::query()->find($user->id))->not->toBeNull()
+        ->and(ActivityLog::query()->where('action', Action::UserDeleted)->exists())->toBeFalse();
+});
+
 test('users management requires granular permissions', function () {
     // Account Manager lacks manage_users entirely.
     $this->actingAs(User::factory()->role(SystemRole::AccountManager)->create());
     $this->get('/users')->assertForbidden();
 });
 
-test('users management is absent in the cloud edition', function () {
+test('users management is present in the cloud edition too', function () {
+    // It was absent until 2.2.0, on the reasoning that a managed
+    // installation's accounts arrived from outside it. A platform
+    // provisions how many seats exist; who fills them, and which role each
+    // holds, is knowledge the platform does not have.
     config()->set('projectsend.edition', Edition::Cloud);
 
     $this->actingAs(admin());
 
-    $this->get('/users')->assertNotFound();
+    $this->get('/users')->assertOk();
 });

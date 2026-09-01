@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\Audit;
 
 use App\Models\User;
+use App\Modules\Audit\Events\ActivityRecorded;
 use App\Modules\Audit\Events\ResolvingActivityOrigin;
 use App\Modules\Platform\Settings\Setting;
 use App\Modules\Platform\Settings\Settings;
@@ -61,6 +62,7 @@ class ActivityLogger
         ]);
 
         app(SecurityAlertMonitor::class)->inspect($entry);
+        Event::dispatch(new ActivityRecorded($entry));
     }
 
     /**
@@ -136,7 +138,7 @@ class ActivityLogger
      */
     public function logSystem(Action $action, array $context = []): void
     {
-        ActivityLog::query()->create([
+        $entry = ActivityLog::query()->create([
             'actor_id' => null,
             'actor_name' => null,
             'actor_type' => null,
@@ -148,6 +150,7 @@ class ActivityLogger
             'context' => $context === [] ? null : $context,
             'created_at' => now(),
         ]);
+        Event::dispatch(new ActivityRecorded($entry));
     }
 
     private function subjectName(?Model $subject): ?string

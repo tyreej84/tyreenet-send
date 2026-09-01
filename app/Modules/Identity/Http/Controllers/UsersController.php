@@ -9,14 +9,17 @@ use App\Models\User;
 use App\Modules\Api\Auth\ApiTokens;
 use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Identity\AccountContentDeletion;
+use App\Modules\Identity\Erasure\AvailableEmailRule;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\StaffAccounts;
 use App\Modules\Identity\TwoFactor\TwoFactorAdministration;
 use App\Modules\Identity\UserType;
+use App\Modules\Platform\Seats\SeatAllowance;
 use App\Support\Pagination;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
@@ -24,9 +27,17 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Staff ("system users") management — community edition only; managed
- * installations create them outside the application. Clients are a different
- * population managed by the Clients module: they never appear here.
+ * Staff ("system users") management. Clients are a different population
+ * managed by the Clients module: they never appear here.
+ *
+ * Available on both editions since 2.2.0. A managed installation is sold a
+ * number of seats and fills them itself — see Capability::UsersManage for
+ * why capacity is the platform's and who fills it is the tenant's.
+ *
+ * That makes a full installation an ordinary state rather than an error,
+ * so `index()` reports the seat position and `create()` refuses to open a
+ * form nothing can be submitted through. SeatAllowance::guardStaff() still
+ * runs in `store()`: this is the courtesy, that is the rule.
  */
 class UsersController extends Controller
 {
@@ -35,6 +46,7 @@ class UsersController extends Controller
         private readonly AccountContentDeletion $accountDeletion,
         private readonly ApiTokens $apiTokens,
         private readonly StaffAccounts $accounts,
+        private readonly SeatAllowance $seats,
     ) {}
 
     public function index(Request $request): Response
@@ -97,11 +109,24 @@ class UsersController extends Controller
             'roles' => Role::query()->orderBy('name')->get(['id', 'name'])
                 ->map(fn (Role $role): array => ['id' => $role->id, 'name' => $role->name])->all(),
             'reassign_candidates' => $this->accountDeletion->candidates(),
+            // Null on a self-hosted install: no limit, nothing to say.
+            'seats' => $this->seats->staffState(),
         ]);
     }
 
-    public function create(): Response
+    public function create(): RedirectResponse|Response
     {
+        // Turned away here rather than on submit. Somebody reaching this
+        // by link or bookmark used to fill in a name, an email and a
+        // password they had to invent, and learn the installation was full
+        // from a validation error under the email field — which reads as a
+        // fault with the address rather than a fact about the plan.
+        $seats = $this->seats->staffState();
+
+        if ($seats !== null && $seats['full']) {
+            return redirect()->route('users.index')->with('error', $seats['message']);
+        }
+
         return Inertia::render('users/create', [
             'roles' => $this->roleOptions(),
             'clients' => $this->clientOptions(),
@@ -112,11 +137,14 @@ class UsersController extends Controller
     {
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', new AvailableEmailRule],
             'role_id' => ['required', 'integer', Rule::in($this->accounts->assignableRoleIds($this->actor()))],
             'password' => ['required', 'confirmed', Password::defaults()],
             'assigned_clients' => ['array'],
-            'assigned_clients.*' => ['integer', Rule::exists('users', 'id')->where('type', UserType::Client->value)],
+            // Reach, not a label: see StaffAccounts::assignableClientIds.
+            // The list is client-typed already, so this is one rule where
+            // an exists() plus a type filter used to be two.
+            'assigned_clients.*' => ['integer', Rule::in($this->accounts->assignableClientIds($this->actor()))],
         ]);
 
         $user = $this->accounts->create([
@@ -126,7 +154,12 @@ class UsersController extends Controller
             'password' => $validated['password'],
         ], $validated['assigned_clients'] ?? []);
 
-        return redirect()->route('users.edit', $user)->with('success', __('User created.'));
+        // Same create-without-edit rule as ClientsController::store().
+        $target = $this->actor()->can('edit_users')
+            ? redirect()->route('users.edit', $user)
+            : redirect()->route('users.create');
+
+        return $target->with('success', __('User created.'));
     }
 
     public function edit(User $user): Response
@@ -171,7 +204,10 @@ class UsersController extends Controller
             'active' => ['required', 'boolean'],
             'password' => ['nullable', 'confirmed', Password::defaults()],
             'assigned_clients' => ['array'],
-            'assigned_clients.*' => ['integer', Rule::exists('users', 'id')->where('type', UserType::Client->value)],
+            // Reach, not a label: see StaffAccounts::assignableClientIds.
+            // The list is client-typed already, so this is one rule where
+            // an exists() plus a type filter used to be two.
+            'assigned_clients.*' => ['integer', Rule::in($this->accounts->assignableClientIds($this->actor()))],
         ]);
 
         // Deactivating yourself is refused here rather than in StaffAccounts
@@ -216,9 +252,15 @@ class UsersController extends Controller
 
         $validated = $this->accountDeletion->validate($request, $user);
 
-        $name = $this->accounts->delete($user);
-
-        $this->accountDeletion->apply($validated, $user, $name);
+        // Soft-deleting the account and disposing of its files are two
+        // separate writes; keep them in one transaction so a failure in the
+        // second (e.g. the reassignment target deleted between validation
+        // and apply()'s findOrFail) cannot leave the account deleted with
+        // its content still pointing at it.
+        DB::transaction(function () use ($validated, $user): void {
+            $name = $this->accounts->delete($user);
+            $this->accountDeletion->apply($validated, $user, $name);
+        });
 
         return redirect()->route('users.index')->with('success', __('User deleted.'));
     }
@@ -259,13 +301,15 @@ class UsersController extends Controller
     }
 
     /**
-     * The client roster, for the assigned-clients picker.
+     * The client roster, for the assigned-clients picker — narrowed to
+     * what this actor may actually hand out, the same way roleOptions()
+     * is narrowed to the roles they may grant.
      *
      * @return array<int, array{id: int, name: string}>
      */
     private function clientOptions(): array
     {
-        return User::query()->where('type', UserType::Client)->orderBy('name')->get()
+        return User::query()->whereIn('id', $this->accounts->assignableClientIds($this->actor()))->orderBy('name')->get()
             ->map(fn (User $client): array => ['id' => $client->id, 'name' => $client->name])
             ->values()->all();
     }

@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Modules\Clients\Http\Controllers\ClientSettingsController;
 use App\Modules\Comments\Http\Controllers\CommentSettingsController;
+use App\Modules\Files\Http\Controllers\DownloadSettingsController;
 use App\Modules\Files\Http\Controllers\FileRetentionSettingsController;
 use App\Modules\Files\Http\Controllers\UploadSettingsController;
 use App\Modules\Identity\Http\Controllers\ApiTokensController;
@@ -23,6 +24,7 @@ use App\Modules\Platform\Http\Controllers\EmailTemplatesController;
 use App\Modules\Platform\Http\Controllers\ExternalStorageSettingsController;
 use App\Modules\Platform\Http\Controllers\GettingStartedController;
 use App\Modules\Platform\Http\Controllers\LanguageSettingsController;
+use App\Modules\Platform\Http\Controllers\OperationalHealthController;
 use App\Modules\Platform\Http\Controllers\PrivacySettingsController;
 use App\Modules\Platform\Http\Controllers\PublicListingSettingsController;
 use App\Modules\Platform\Http\Controllers\SchedulerMonitoringController;
@@ -114,6 +116,9 @@ Route::middleware('auth')->group(function () {
     // footer links every staff member here regardless of what they may
     // edit.
     Route::middleware('staff')->get('system/about', AboutController::class)->name('system.about');
+    Route::middleware(['staff', 'can:view_system_info'])
+        ->get('system/health', OperationalHealthController::class)
+        ->name('system.health');
 
     // Where a new installation's administrator is sent on their first
     // visit, and a page any staff member can come back to. `staff` alone:
@@ -152,6 +157,8 @@ Route::middleware('auth')->group(function () {
         Route::patch('system/settings/clients', [ClientSettingsController::class, 'update'])->name('system-settings.clients.update');
         Route::get('system/settings/uploads', [UploadSettingsController::class, 'edit'])->name('system-settings.uploads.edit');
         Route::patch('system/settings/uploads', [UploadSettingsController::class, 'update'])->name('system-settings.uploads.update');
+        Route::get('system/settings/downloads', [DownloadSettingsController::class, 'edit'])->name('system-settings.downloads.edit');
+        Route::patch('system/settings/downloads', [DownloadSettingsController::class, 'update'])->name('system-settings.downloads.update');
         Route::get('system/settings/file-retention', [FileRetentionSettingsController::class, 'edit'])->name('system-settings.file-retention.edit');
         Route::patch('system/settings/file-retention', [FileRetentionSettingsController::class, 'update'])->name('system-settings.file-retention.update');
         Route::get('system/settings/comments', [CommentSettingsController::class, 'edit'])->name('system-settings.comments.edit');

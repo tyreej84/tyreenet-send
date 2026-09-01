@@ -7,7 +7,9 @@ namespace App\Modules\Identity;
 use App\Models\User;
 use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLogger;
+use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Identity\Models\Role;
+use App\Modules\Platform\Seats\SeatAllowance;
 use App\Modules\Identity\Permissions\SystemRole;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -36,6 +38,8 @@ class AccountConversion
     public function __construct(
         private readonly StaffAccounts $accounts,
         private readonly ActivityLogger $activity,
+        private readonly StaffLibraryScope $library,
+        private readonly SeatAllowance $seats,
     ) {}
 
     /**
@@ -43,6 +47,10 @@ class AccountConversion
      */
     public function guardToClient(User $actor, User $target): void
     {
+        // The mirror of the promotion above: a demotion takes a client
+        // seat and frees a staff one.
+        $this->seats->guardClient();
+
         $this->guardSelf($actor, $target);
 
         // Only on this direction. "Could the actor have granted the
@@ -84,11 +92,31 @@ class AccountConversion
     {
         $this->guardSelf($actor, $target);
 
-        // No guardTarget here — see guardToClient(). What actually limits
-        // a promotion is the role being granted, and that is enforced by
-        // the caller validating role_id against
-        // StaffAccounts::assignableRoleIds(): nobody hands out authority
-        // they do not hold.
+        // A promotion takes a staff seat. It frees a client one at the same
+        // moment, so the two caps move in opposite directions and only the
+        // one being filled can refuse. Asked in the guard rather than in
+        // toStaff() so a refusal happens before the transaction opens.
+        $this->seats->guardStaff();
+
+        // No guardTarget here — see guardToClient(). It asks "could the
+        // actor have granted the target's role", which is meaningless of
+        // a client; what limits a promotion is the role being *granted*,
+        // and the caller enforces that by validating role_id against
+        // StaffAccounts::assignableRoleIds().
+        //
+        // That answers the question about the role. It does not answer
+        // the one about the target, and the target here is a client
+        // account: the same object every other route that binds one
+        // holds to the actor's own roster. A promotion is the most
+        // far-reaching thing that can be done to a client — it takes
+        // their portal access away, makes their assignments inert, and
+        // leaves them holding staff permissions the actor chose — so
+        // reaching one outside that roster through this door and no
+        // other is not a rule, it is a gap. 404 rather than 403, like
+        // the clients routes and like the isClient() check the caller
+        // makes on the way in: a client this staff member may not manage
+        // should not be distinguishable from one that is not there.
+        abort_unless($this->library->canAssignClient($actor, $target), 404);
 
         // An account request is not an account yet. Approving one is a
         // deliberate decision with its own screen and its own audit entry;

@@ -6,6 +6,7 @@ namespace App\Support;
 
 use App\Modules\Platform\Captcha\Captcha;
 use App\Modules\Platform\Captcha\CaptchaForm;
+use App\Modules\Files\Folders\FolderExistsRule;
 use App\Modules\Platform\Captcha\CaptchaRule;
 use App\Modules\Platform\Localization\TimezoneRegistry;
 use Illuminate\Validation\Rule;
@@ -48,6 +49,43 @@ class Rules
             'regex:/^[a-z0-9]+(-[a-z0-9]+)*$/',
             $ignoreId === null ? $unique : $unique->ignore($ignoreId),
         ];
+    }
+
+    /**
+     * The rule for an id naming a library folder.
+     *
+     * Shared because the plain `exists:folders,id` it replaces is not
+     * true: Folder uses SoftDeletes, and the presence check runs against
+     * the table, so a folder in the trash passes it. Every caller then
+     * reads the rule as "this folder exists" and behaves accordingly —
+     * and the ones that resolve the id afterwards resolve it through
+     * Folder::query(), which does honour the soft delete, so the guard
+     * sees no folder at all while the value that reaches the write is
+     * still the id.
+     *
+     * FilesController::store() and Api\FilesController::store() ended up
+     * filing an upload into a deleted folder that way: the guard read
+     * null and allowed it as a root upload, and the row was written with
+     * the id. Deleting a folder deletes every file in its subtree, so
+     * that is a live file inside a folder whose deletion already removed
+     * everything in it — reachable by id, in search and over the API,
+     * and absent from the listing its uploader would look in.
+     *
+     * Making the rule mean what its readers already assume fixes those
+     * and leaves the paths that resolve through StaffLibraryScope alone;
+     * they refuse a trashed id today by a longer route.
+     *
+     * Presence is the caller's business, as with slug() above: spread it
+     * behind `sometimes` where a PATCH may omit the field.
+     *
+     * A rule object rather than a conditional `exists`, so the refusal can
+     * say why — see FolderExistsRule.
+     *
+     * @return array<int, mixed>
+     */
+    public static function folderId(): array
+    {
+        return ['nullable', 'integer', new FolderExistsRule];
     }
 
     /**

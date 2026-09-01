@@ -15,6 +15,7 @@ use App\Modules\Platform\Attribution\Attribution;
 use App\Modules\Platform\Capabilities\CapabilityRegistry;
 use App\Modules\Platform\Captcha\Captcha;
 use App\Modules\Platform\Installation\Installation;
+use App\Modules\Files\Queue\StalledZipBuilds;
 use App\Modules\Platform\Localization\LocaleRegistry;
 use App\Modules\Platform\Localization\TimezoneRegistry;
 use App\Modules\Platform\OfficialLinks;
@@ -102,6 +103,7 @@ class HandleInertiaRequests extends Middleware
             'pending' => $this->pendingCounts($request),
             'update_notice' => $this->updateNotice($request),
             'code_notice' => $this->codeNotice($request),
+            'worker_notice' => $this->workerNotice($request),
             'locale' => app()->getLocale(),
             // The clock this viewer reads dates by, and whether it is a
             // choice or a fallback. The frontend needs both: the first to
@@ -145,10 +147,14 @@ class HandleInertiaRequests extends Middleware
         }
 
         if ($checker->allows($user, Permission::ApproveGroupsMembershipsRequests)) {
+            // Narrowed like the queue it badges, and by the same scope —
+            // a client-scoped staff member is not shown a number they
+            // cannot act on. Same rule the comments badge below states.
             $counts['membership_requests'] = MembershipRequest::query()
                 ->pending()
                 ->whereHas('user')
                 ->whereHas('group')
+                ->approvableBy($user)
                 ->count();
         }
 
@@ -243,6 +249,29 @@ class HandleInertiaRequests extends Middleware
         }
 
         return app(RunningCodeState::class)->current();
+    }
+
+    /**
+     * Whether anything is serving the queue zip builds run on.
+     *
+     * Gated on view_system_info for the reason codeNotice() gives above:
+     * a background worker that is not picking work up is a fact about the
+     * machine rather than a feature of an edition. Same audience, same
+     * banner slot, one question further along.
+     *
+     * @return array{waiting_since: string}|null
+     */
+    protected function workerNotice(Request $request): ?array
+    {
+        $user = $request->user();
+
+        if ($user === null || ! app(PermissionChecker::class)->allows($user, Permission::ViewSystemInfo)) {
+            return null;
+        }
+
+        $waitingSince = app(StalledZipBuilds::class)->oldestUnstarted();
+
+        return $waitingSince === null ? null : ['waiting_since' => $waitingSince->toIso8601String()];
     }
 
     /**

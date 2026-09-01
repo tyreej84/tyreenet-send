@@ -11,6 +11,8 @@ use App\Modules\Audit\Action;
 use App\Modules\Audit\ActivityLogger;
 use App\Modules\Clients\ClientCustomFieldType;
 use App\Modules\Clients\ClientStorageUsage;
+use App\Modules\Files\Access\StaffLibraryScope;
+use App\Modules\Platform\Seats\SeatAllowance;
 use App\Modules\Clients\Http\Resources\Api\ClientResource;
 use App\Modules\Clients\Models\ClientCustomField;
 use App\Modules\Clients\Models\ClientCustomFieldValue;
@@ -18,6 +20,8 @@ use App\Modules\Clients\Notifications\ClientAccountEditedNotification;
 use App\Modules\Clients\Notifications\ClientWelcomeNotification;
 use App\Modules\Files\DeletedAccountContent;
 use App\Modules\Identity\AccountContentDeletion;
+use App\Modules\Identity\Erasure\AvailableEmailRule;
+use App\Modules\Identity\Erasure\ErasureSchedule;
 use App\Modules\Identity\Models\Role;
 use App\Modules\Identity\Permissions\SystemRole;
 use App\Modules\Identity\TwoFactor\TwoFactorAdministration;
@@ -28,6 +32,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -54,6 +59,9 @@ class ClientsController extends Controller
         private readonly ClientStorageUsage $storageUsage,
         private readonly DeletedAccountContent $accountContent,
         private readonly AccountContentDeletion $accountDeletion,
+        private readonly StaffLibraryScope $scope,
+        private readonly SeatAllowance $seats,
+        private readonly ErasureSchedule $erasure,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -63,7 +71,12 @@ class ClientsController extends Controller
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
         ]);
 
-        $query = User::query()->where('type', UserType::Client);
+        // Narrowed the same way the web listing is, and by the same
+        // rule the object routes below are guarded with.
+        $viewer = $request->user();
+        assert($viewer !== null);
+
+        $query = $this->scope->clients($viewer);
 
         if (($filters['search'] ?? null) !== null) {
             $search = $filters['search'];
@@ -79,18 +92,36 @@ class ClientsController extends Controller
         return ClientResource::collection($this->polling->paginate($request, $query, 'users'));
     }
 
-    public function show(User $client): ClientResource
+    /**
+     * Mirrors the web controller's guard, as every API twin here does:
+     * the token's `edit_clients` says its owner manages clients, not
+     * that they manage *this* one.
+     */
+    private function guardTarget(Request $request, User $client): void
     {
         abort_unless($client->isClient(), 404);
+
+        $viewer = $request->user();
+        assert($viewer !== null);
+
+        abort_unless($this->scope->canAssignClient($viewer, $client), 404);
+    }
+
+    public function show(Request $request, User $client): ClientResource
+    {
+        $this->guardTarget($request, $client);
+
 
         return $this->resourceFor($client);
     }
 
     public function store(Request $request): JsonResponse
     {
+        $this->seats->guardClient();
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:users,email'],
+            'email' => ['required', 'string', 'lowercase', 'email', 'max:255', new AvailableEmailRule],
             // No `confirmed`: repeating a password is a defence against a
             // human mistyping into a form, and an API caller has no second
             // field to mistype. This installation's password policy still
@@ -133,7 +164,8 @@ class ClientsController extends Controller
 
     public function update(Request $request, User $client): ClientResource
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $validated = $request->validate([
             'name' => ['sometimes', 'string', 'max:255'],
@@ -159,7 +191,11 @@ class ClientsController extends Controller
             $client->storage_quota_mb = $validated['storage_quota_mb'] ?? 0;
         }
 
+        // Approval, and so the moment the seat is spent — same rule the
+        // web edit screen and approve() answer to. Inside the branch, so a
+        // capped installation can still edit a client it already holds.
         if (($validated['active'] ?? false) && $client->account_requested) {
+            $this->seats->guardClient('active');
             $client->account_requested = false;
         }
 
@@ -203,9 +239,10 @@ class ClientsController extends Controller
      * in the activity log against the caller. Answers 204 whether or not a
      * second factor was actually in force.
      */
-    public function destroyTwoFactor(User $client, TwoFactorAdministration $twoFactor): JsonResponse
+    public function destroyTwoFactor(Request $request, User $client, TwoFactorAdministration $twoFactor): JsonResponse
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $twoFactor->reset($client);
 
@@ -230,16 +267,29 @@ class ClientsController extends Controller
      */
     public function destroy(Request $request, User $client): JsonResponse
     {
-        abort_unless($client->isClient(), 404);
+        $this->guardTarget($request, $client);
+
 
         $validated = $this->accountDeletion->validate($request, $client);
 
-        $name = $client->name;
-        $client->delete();
+        // Soft-deleting the account and disposing of its files are two
+        // separate writes; keep them in one transaction so a failure in the
+        // second (e.g. the reassignment target deleted between validation
+        // and apply()'s findOrFail) cannot leave the account deleted with
+        // its content still pointing at it.
+        //
+        // The erasure stamp goes inside for the same reason: a deletion
+        // that rolls back must not leave a live account carrying a date
+        // on which it would be erased.
+        DB::transaction(function () use ($validated, $client): void {
+            $name = $client->name;
+            $this->erasure->apply($client);
+            $client->delete();
 
-        $this->activity->log(Action::UserDeleted, context: ['name' => $name]);
+            $this->activity->log(Action::UserDeleted, context: ['name' => $name]);
 
-        $this->accountDeletion->apply($validated, $client, $name);
+            $this->accountDeletion->apply($validated, $client, $name);
+        });
 
         return response()->json(status: 204);
     }
