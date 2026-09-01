@@ -42,6 +42,7 @@ yarn-error.log
 !/docs/email-oauth.md
 !/docs/api-zapier.md
 !/docs/TYREENET_PRODUCTION.md
+!/docs/TYREENET_UPSTREAM_UPDATES.md
 
 # ── Local-only dev TLS ──
 # mkcert certificates and the nginx config that terminates HTTPS on the
